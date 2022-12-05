@@ -1,0 +1,39 @@
+#!/bin/bash
+#PBS -V
+#PBS -j eo
+#PBS -N chr22.mSTR
+#PBS -q Fat
+#PBS -l nodes=1:ppn=1
+#PBS -d /home2/niuyw/project/STR/02_FilteredRaw220120_mSTR/logs
+
+# WORK DIR
+WORKDIR=/home2/niuyw/project/STR/02_FilteredRaw220120_mSTR
+
+# chrom
+echo $chrom
+
+# PPN
+PPN=1
+
+# genome and annotations
+ANNODIR=/home2/niuyw/RefData
+GRCh38_REFERENCE=$ANNODIR/Homo_sapiens/GRCh38_no_alt/genome.fa
+GRCh38_GTF=$ANNODIR/Homo_sapiens/GENCODE_v39/gencode.v39.annotation.gtf
+GRCh38_bowtie2=$ANNODIR/Homo_sapiens/GRCh38_no_alt/Bowtie2Index/GRCh38_no_alt
+GRCh38_STAR=$ANNODIR/Homo_sapiens/GRCh38_no_alt/STARgenomes
+
+# tools dir
+TOOLDIR=/home2/niuyw/software
+path2bcftools=$TOOLDIR/bcftools-1.14/bcftools
+export BCFTOOLS_PLUGINS=$TOOLDIR/bcftools-1.14/plugins
+
+echo Start time is `date +%Y/%m/%d--%H:%M`
+
+input=/Parastor300s_G30S/shiyr/gangSTR/process-all/3-dumpSTR/${chrom}-dump.vcf.gz
+
+$path2bcftools view --thread $PPN -S /home2/niuyw/project/STR/samples/sam6487.lst -c 0 -C 0 -f PASS -i 'INFO/PERIOD <= 6' -Oz -o $WORKDIR/${chrom}.mSTR.vcf.gz $input
+
+$TOOLDIR/htslib.1.14/bin/tabix -p vcf $WORKDIR/${chrom}.mSTR.vcf.gz
+
+echo Finish time is `date +%Y/%m/%d--%H:%M`
+

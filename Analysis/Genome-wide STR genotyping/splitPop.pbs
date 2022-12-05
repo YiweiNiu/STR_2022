@@ -1,0 +1,54 @@
+#!/bin/bash
+#PBS -V
+#PBS -j eo
+#PBS -N CHS.splitPop
+#PBS -q Fat
+#PBS -l nodes=1:ppn=4
+#PBS -d /home2/niuyw/project/STR/02_FilteredRaw220120_eachPop/logs
+
+# WORK DIR
+WORKDIR=/home2/niuyw/project/STR/02_FilteredRaw220120_eachPop
+
+# pop
+echo $pop
+
+# PPN
+PPN=4
+
+# genome and annotations
+ANNODIR=/home2/niuyw/RefData
+GRCh38_REFERENCE=$ANNODIR/Homo_sapiens/GRCh38_no_alt/genome.fa
+GRCh38_GTF=$ANNODIR/Homo_sapiens/GENCODE_v39/gencode.v39.annotation.gtf
+GRCh38_bowtie2=$ANNODIR/Homo_sapiens/GRCh38_no_alt/Bowtie2Index/GRCh38_no_alt
+GRCh38_STAR=$ANNODIR/Homo_sapiens/GRCh38_no_alt/STARgenomes
+
+# tools dir
+TOOLDIR=/home2/niuyw/software
+path2bcftools=$TOOLDIR/bcftools-1.14/bcftools
+export BCFTOOLS_PLUGINS=$TOOLDIR/bcftools-1.14/plugins
+
+echo Start time is `date +%Y/%m/%d--%H:%M`
+
+for chrom in chr1 chr2 chr3 chr4 chr5 chr6 chr7 chr8 chr9 chr10 chr11 chr12 chr13 chr14 chr15 chr16 chr17 chr18 chr19 chr20 chr21 chr22
+do
+  input=/home2/niuyw/project/STR/02_FilteredRaw220120/${chrom}.vcf.gz
+  # split by pop
+  $path2bcftools view --threads $PPN -c 1 -S /home2/niuyw/project/STR/samples/lst.${pop} -Ou $input | \
+    $path2bcftools +fill-tags --threads $PPN -Oz -o $WORKDIR/${pop}.${chrom}.vcf.gz - -- -t AC,AN,AF,MAF
+  $TOOLDIR/htslib.1.14/bin/tabix -p vcf $WORKDIR/${pop}.${chrom}.vcf.gz
+done
+
+# merge vcf
+$path2bcftools concat --threads $PPN -a -Oz -o $WORKDIR/${pop}.vcf.gz $WORKDIR/${pop}.chr*.vcf.gz
+
+# index
+$TOOLDIR/htslib.1.14/bin/tabix -p vcf $WORKDIR/${pop}.vcf.gz
+
+# statSTR
+/home2/shiyr/miniconda3/bin/statSTR --vcf $WORKDIR/${pop}.vcf.gz --out $WORKDIR/${pop} --vcftype gangstr --thresh --afreq --acount --hwep --het --entropy --mean --mode --var --numcalled
+
+# clean
+rm $WORKDIR/${pop}.chr*.vcf.gz
+
+echo Finish time is `date +%Y/%m/%d--%H:%M`
+
