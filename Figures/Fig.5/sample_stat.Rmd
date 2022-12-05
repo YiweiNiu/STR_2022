@@ -1,0 +1,372 @@
+---
+title: "sample_stat"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME = "sample_stat"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+    if (before) {
+        print(paste("Start:", Sys.time()))
+        NOW <<- Sys.time()
+    } else {
+        print(paste("Stop:", Sys.time()))
+        print(Sys.time() - NOW)
+    }
+})
+
+knitr::opts_chunk$set(
+    autodep        = TRUE,
+    cache.lazy     = FALSE, 
+    cache.comments = FALSE,
+    echo           = TRUE,
+    error          = FALSE,
+    fig.align      = "center",
+    fig.width      = 10,
+    fig.height     = 8,
+    message        = FALSE,
+    warning        = FALSE,
+    timeit         = TRUE
+)
+```
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+geom.text.size <- 7
+
+# heatmap
+library(pheatmap)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+Load sample info
+
+```{r load-sam-info, cache=FALSE, message=FALSE, warning=FALSE}
+sam_info = read_tsv(here::here('data', '220116_sample_info.GangSTR.txt')) %>%
+  dplyr::select(sample_old, dataset, super_pop, pop)
+```
+
+Load sample stat
+
+```{r load-sam-callrate, cache=FALSE, warning=FALSE, message=FALSE}
+sam_stat = read_csv('/niuyw-usb-disk/Projects/STR/str_stat/sample_stat.csv')
+```
+
+## Neat
+
+```{r}
+sam_stat = sam_stat %>%
+  mutate(hom = tot - het) %>%
+  left_join(sam_info, by = "sample_old") %>%
+  mutate(spop = case_when(
+    dataset == "NyuWa" ~ "NyuWa",
+    TRUE ~ super_pop
+  ))
+```
+
+## Summary stat
+
+By dataset
+
+```{r summary-by-dataset}
+sam_stat %>%
+  group_by(dataset) %>%
+  summarise(m_tot = mean(tot), std_tot = sd(tot),
+            m_het = mean(het), m_hom = mean(hom))
+```
+
+By super pop
+
+```{r summary-by-spop}
+sam_stat %>%
+  group_by(spop) %>%
+  summarise(m_tot = mean(tot), std_tot = sd(tot),
+            m_het = mean(het), m_hom = mean(hom))
+```
+
+By pop
+
+```{r summary-by-pop}
+sam_stat %>%
+  filter(pop != "NA") %>%
+  group_by(pop) %>%
+  summarise(m_tot = mean(tot), std_tot = sd(tot),
+            m_het = mean(het), m_hom = mean(hom)) %>%
+  DT::datatable()
+```
+
+## Plot
+
+### Histgram
+
+NyuWa
+
+```{r hist-NyuWa, fig.width=6, fig.height=5}
+sam_stat %>%
+  filter(dataset != "1KGP") %>%
+  ggplot(aes(x = tot)) +
+  #scale_fill_manual(values=cPalette[1]) +
+  geom_histogram(binwidth=50, size=0.25, fill = '#1f77b4') +
+  xlab(NULL) + ylab('# of individuals') + 
+  scale_y_continuous(expand=c(0, 0)) +
+  theme(legend.position = 'None',
+        axis.text.x = element_text(angle = 60, hjust = 1, vjust = 1))
+```
+
+1KGP
+
+```{r hist-1KGP, fig.width=6, fig.height=5}
+sam_stat %>%
+  filter(dataset == "1KGP") %>%
+  ggplot(aes(x = tot)) +
+  geom_histogram(binwidth=50, size=0.25, fill = '#1f77b4') +
+  xlab(NULL) + ylab('# of individuals') + 
+  scale_y_continuous(expand=c(0, 0)) +
+  theme(legend.position = 'None',
+        axis.text.x = element_text(angle = 60, hjust = 1, vjust = 1))
+```
+
+### Per spop
+
+Super pop (jitter)
+
+```{r jitter-spop, fig.width=3, fig.height=2.6}
+p.num_jitter_spop = sam_stat %>%
+  ggplot(aes(x = reorder(spop, -tot, FUN = median), y = tot, color = spop)) +
+  geom_jitter_rast(position=position_jitter(0.2)) +
+  stat_summary(fun=median, geom="point", fill="black", shape=21, size=2) +
+  scale_color_manual(values = pop_color_maps) +
+  xlab(NULL) + ylab('# of pSTRs per sample') + 
+  scale_y_continuous(labels = label_comma()) +
+  ggtitle("Total") +
+  theme(legend.position = 'None',
+        axis.text.x = element_text(angle = 60, hjust = 1, vjust = 1))
+p.num_jitter_spop
+
+ggsave(p.num_jitter_spop, filename = here::here("output", DOCNAME, "Fig.num_jitter_spop.pdf"),
+       height = 2.6, width = 3)
+saveRDS(p.num_jitter_spop, file = here::here("output", DOCNAME, "Fig.num_jitter_spop.rds"))
+```
+
+### Per population
+
+Number
+
+```{r per-pop-jitter-num, fig.width=7, fig.height=3}
+# order by median
+tmp_df = sam_stat %>%
+  filter(pop != "NA") %>%
+  group_by(super_pop) %>%
+  mutate(m1 = median(tot)) %>%
+  group_by(pop) %>%
+  mutate(m2 = median(tot)) %>%
+  mutate(m2  = case_when(
+    pop == "IBS" ~ 32775+1, # since IBS/TSI have the same median value
+    TRUE ~ m2
+  )) %>%
+  arrange(-m1, -m2, -tot) %>%
+  dplyr::select(-m1, -m2)
+
+# dat for plot
+d4p = sam_stat %>%
+  filter(pop != "NA") %>%
+  mutate(pop = factor(pop, levels = unique(tmp_df$pop)),
+         super_pop = factor(super_pop, levels = unique(tmp_df$super_pop)))
+
+# plot
+p.num_jitter_pop = d4p %>%
+  ggplot(aes(x = pop, y = tot, color = pop)) +
+  geom_jitter_rast(position=position_jitter(0.2)) +
+  stat_summary(fun=median, geom="point", fill="black", shape=21, size=2) +
+  scale_color_manual(values = pop_color_maps) +
+  scale_y_continuous(labels = label_comma()) +
+  labs(x = NULL, y = "# of pSTRs") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "none")
+p.num_jitter_pop
+saveRDS(p.num_jitter_pop, file = here::here("output", DOCNAME, "Fig.num_jitter_pop.rds"))
+```
+
+Median number of Het/Hom
+
+```{r per-pop-jitter-num-ave-het-hom, fig.width=3, fig.height=6}
+p.het_hom_num = d4p %>%
+  group_by(pop) %>%
+  summarise(He = median(het), Ho = median(hom)) %>%
+  pivot_longer(cols = c("Ho", "He"), names_to = "name", values_to = "value") %>%
+  mutate(name = factor(name, levels = c("Ho", "He"))) %>%
+  ggplot(aes(x = pop, y = value, fill = name)) +
+  geom_col() +
+  scale_color_manual(values = c("#7da1d5", "#bdde85")) +
+  scale_fill_manual(values = c("#7da1d5", "#bdde85")) +
+  scale_y_continuous(labels = label_comma(),
+                     expand = c(0 ,0)) +
+  labs(x = NULL, y = "# of pSTRs",
+       fill = NULL) +
+  coord_flip() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1), legend.position = "top")
+p.het_hom_num
+saveRDS(p.het_hom_num, file = here::here("output", DOCNAME, "Fig.het_hom_num.rds"))
+```
+
+Het/Hom ratio (jitter)
+
+```{r per-pop-jitter-het_hom_ratio, fig.width=6, fig.height=3}
+d4p %>%
+  mutate(ratio = het/hom) %>%
+  ggplot(aes(x = pop, y = ratio, color = pop)) +
+  geom_jitter_rast(position=position_jitter(0.2)) +
+  stat_summary(fun=median, geom="point", fill="black", shape=21, size=2) +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = NULL, y = "Het/Hom ratio") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "none")
+```
+
+Het/Hom ratio (box)
+
+```{r per-pop-box-het_hom_ratio, fig.width=7, fig.height=3}
+p.het_hom_ratio = d4p %>%
+  mutate(ratio = het/hom) %>%
+  ggplot(aes(x = pop, y = ratio, color = spop)) +
+  geom_boxplot(outlier.size = .5) +
+  scale_color_manual(values = pop_color_maps,
+                     limits = c("AFR", "SAS", "AMR", "EUR", "EAS", "NyuWa")) +
+  labs(x = NULL, y = "Het/Hom ratio", color = NULL) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p.het_hom_ratio
+saveRDS(p.het_hom_ratio, file = here::here("output", DOCNAME, "Fig.het_hom_ratio.rds"))
+```
+
+### Per sample
+
+Period
+
+```{r per-sample-period, fig.width=7, fig.height=3}
+# pop: order by median, sample: order by tot
+tmp_df = sam_stat %>%
+  filter(pop != "NA") %>%
+  group_by(super_pop) %>%
+  mutate(m1 = median(tot)) %>%
+  group_by(pop) %>%
+  mutate(m2 = median(tot)) %>%
+  mutate(m2  = case_when(
+    pop == "IBS" ~ 32775+1, # since IBS/TSI have the same median value
+    TRUE ~ m2
+  )) %>%
+  arrange(-m1, -m2, -tot) %>%
+  dplyr::select(-m1, -m2)
+
+# label for x
+x_breaks = tmp_df %>%
+  group_by(super_pop, pop) %>%
+  top_n(1, -tot) %>%
+  pull(sample_old)
+
+p.numPerSamByPeriod = sam_stat %>%
+  filter(pop != "NA") %>%
+  dplyr::select(sample_old,
+                `Di-` = period_2, `Tri-` = period_3, `Tet-` = period_4,
+                `Pen-` = period_5, `Hex-` = period_6) %>%
+  pivot_longer(cols = c("Di-", "Tri-", "Tet-", "Pen-", "Hex-")) %>%
+  mutate(sample_old = factor(sample_old, levels = unique(tmp_df$sample_old)),
+         name = factor(name, levels = rev(c("Di-", "Tri-", "Tet-", "Pen-", "Hex-")))) %>%
+  ggplot(aes(x = sample_old, y = value, fill = name, color = name)) +
+  geom_col() +
+  scale_color_manual(values = period_color_map) +
+  scale_fill_manual(values = period_color_map) +
+  scale_y_continuous(labels = label_comma(),
+                     expand = c(0, 0),
+                     limits = c(0, 40000)) +
+  scale_x_discrete(breaks = x_breaks) +
+  labs(x = NULL, y = "# of pSTRs",
+       fill = "Period", color = "Period") +
+  theme(axis.text.x = element_blank())
+p.numPerSamByPeriod
+
+# save
+ggsave(p.numPerSamByPeriod, filename = here::here("output", DOCNAME, "Fig.numPerSamByPeriod.pdf"),
+       height = 3, width = 6)
+saveRDS(p.numPerSamByPeriod, file = here::here("output", DOCNAME, "Fig.numPerSamByPeriod.rds"))
+```
+
+Het/Hom
+
+```{r per-samplehet-hom, fig.width=7, fig.height=3}
+# plot
+p.numPerSamByHet = sam_stat %>%
+  filter(pop != "NA") %>%
+  dplyr::select(sample_old, het, hom) %>%
+  pivot_longer(cols = c("het", "hom")) %>%
+  mutate(sample_old = factor(sample_old, levels = unique(tmp_df$sample_old)),
+         name = factor(name, levels = c("hom", "het"))) %>%
+  ggplot(aes(x = sample_old, y = value, fill = name, color = name)) +
+  geom_col() +
+  scale_color_manual(values = c("#7da1d5", "#bdde85")) +
+  scale_fill_manual(values = c("#7da1d5", "#bdde85")) +
+  scale_y_continuous(labels = label_comma(),
+                     expand = c(0, 0),
+                     limits = c(0, 40000)) +
+  scale_x_discrete(breaks = x_breaks) +
+  labs(x = NULL, y = "# of pSTRs",
+       fill = "Het?", color = "Het?") +
+  theme(axis.text.x = element_blank())
+p.numPerSamByHet
+
+saveRDS(p.numPerSamByHet, file = here::here("output", DOCNAME, "Fig.numPerSamByHet.rds"))
+```
+
+## Align plots
+
+pSTR nubmer of each sample and Het/Hom
+
+```{r fig.width=7, fig.height=5}
+p = p.numPerSamByPeriod + p.numPerSamByHet + p.het_hom_ratio +
+  plot_layout(ncol = 1, heights = c(0.7, 0.7, 0.9))
+p
+```
+
+## Save
+
+```{r save, cache=FALSE}
+saveRDS(sam_stat, file = here::here("output", DOCNAME, "sam_stat.rds"))
+```
+
+## Session info
+

@@ -1,0 +1,224 @@
+---
+title: "eSTR_aSTR.beta_and_context"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "eSTR_aSTR.beta_and_context"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+Check the OLP between eSTR/aSTR and GWAS SNPs
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggbeeswarm)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+geom.text.size <- 7
+
+# heatmap
+library(pheatmap)
+library(corrplot)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+## Load data
+
+Load eSTR
+
+```{r load-eSTR, cache=FALSE, warning=FALSE, message=FALSE}
+df_eSTR = readRDS(here::here("output/eSTR.identification/df.eSTR.rds")) %>% filter(final.p < 0.1)
+```
+
+Load aSTR
+
+```{r load-aSTR, cache=FALSE, warning=FALSE, message=FALSE}
+df_aSTR = readRDS(here::here("output/aSTR.identification/df.aSTR.rds")) %>% filter(final.p < 0.1)
+```
+
+Load STR info
+
+```{r load-info, cache=FALSE, warning=FALSE, message=FALSE}
+str_info = read_tsv("/T02Data/niuyw/niuyw-usb-disk/Projects/STR/str_info/str_info.txt") %>%
+  mutate(csq2 = case_when(
+   csq == "upstream" ~ "Promoter",
+   csq == "nc_intron" ~ "Noncoding_intron",
+   csq == "intron" ~ "Coding_intron",
+   csq == "downstream" ~ "Downstream",
+   csq == "UTR3" ~ "3'UTR",
+   csq == "intergenic" ~ "Intergenic",
+   csq == "nc_exon" ~ "Noncoding_exon",
+   csq == "UTR5" ~ "5'UTR",
+   TRUE ~ csq
+  )) %>%
+  dplyr::select(site, maf, csq2)
+```
+
+## Neat
+
+Combine eSTR/aSTR table to STR info
+
+```{r}
+# eSTR
+df_eSTR = df_eSTR %>%
+  group_by(site) %>%
+  summarise(m_beta = mean(estimate)) %>%
+  left_join(str_info, by = "site") %>%
+  mutate(effect = case_when(
+    m_beta > 0 ~ "pos",
+    TRUE ~ "neg"
+  )) %>%
+  mutate(abs_m_beta = abs(m_beta))
+
+#aSTR
+df_aSTR = df_aSTR %>%
+  group_by(site) %>%
+  summarise(m_beta = mean(estimate)) %>%
+  left_join(str_info, by = "site") %>%
+  mutate(effect = case_when(
+    m_beta > 0 ~ "pos",
+    TRUE ~ "neg"
+  )) %>%
+  mutate(abs_m_beta = abs(m_beta))
+```
+
+Stat
+
+```{r}
+# eSTR
+table(df_eSTR$effect)
+
+#aSTR
+table(df_aSTR$effect)
+```
+
+## MAF and effect size
+
+eTSR
+
+```{r fig.width=3.5, fig.height=3.5}
+p.eSTR.maf = df_eSTR %>%
+  ggplot(aes(x = maf, y = m_beta, color = effect)) +
+  geom_point(alpha = .2, size = .8) +
+  scale_color_manual(values = c("gray", "blue")) +
+  labs(x = "Major allele frequency",
+       y = "Mean effect size of eSTR") +
+  theme(legend.position = "none")
+p.eSTR.maf
+```
+
+aTSR
+
+```{r fig.width=3.5, fig.height=3.5}
+p.aSTR.maf = df_aSTR %>%
+  ggplot(aes(x = maf, y = m_beta, color = effect)) +
+  geom_point(alpha = .2, size = .8) +
+  scale_color_manual(values = c("gray", "blue")) +
+  labs(x = "Major allele frequency",
+       y = "Mean effect size of 3'aSTR") +
+  theme(legend.position = "none")
+p.aSTR.maf
+```
+
+## Effect size and genomic context
+
+eSTR
+
+```{r fig.width=4, fig.height=3.5}
+my_cmp = list(c("Exon", "Intron"), c("Promoter", "Intergenic"))
+
+p.eSTR.context = df_eSTR %>%
+  ggplot(aes(x = reorder(csq2, -abs_m_beta, median), y = abs_m_beta, color = csq2)) +
+  geom_boxplot(outlier.size = .5) +
+  scale_color_aaas() +
+  stat_n_text(size = 3) +
+  labs(x = NULL, y = "Mean absolute effect size") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "none")
+p.eSTR.context
+```
+
+aSTR
+
+```{r fig.width=4, fig.height=3.5}
+p.aSTR.context = df_aSTR %>%
+  ggplot(aes(x = reorder(csq2, -abs_m_beta, median), y = abs_m_beta, color = csq2)) +
+  geom_boxplot(outlier.size = .5) +
+  scale_color_aaas() +
+  stat_n_text(size = 3) +
+  labs(x = NULL, y = "Mean absolute effect size") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "none")
+p.aSTR.context
+```
+
+## Align plots
+
+```{r fig.width=7.5, fig.height=7}
+p1 = p.eSTR.maf + p.eSTR.context +
+  plot_layout(ncol = 2, widths = c(7, 8))
+p2 = p.aSTR.maf + p.aSTR.context +
+  plot_layout(ncol = 2, widths = c(7, 8))
+
+p = p1/p2
+p
+
+ggsave2(p, filename = here::here("output", DOCNAME,  "Fig.eSTR_aSTR.beta_and_context.pdf"), height = 7, width = 7.5)
+saveRDS(p, file = here::here("output", DOCNAME,  "Fig.eSTR_aSTR.beta_and_context.rds"))
+```
+
+## Session info

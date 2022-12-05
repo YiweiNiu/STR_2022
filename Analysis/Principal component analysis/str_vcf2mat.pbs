@@ -1,0 +1,75 @@
+#!/bin/bash
+#PBS -V
+#PBS -j eo
+#PBS -N chr22.str_vcf2mat
+#PBS -q Fat
+#PBS -l nodes=1:ppn=1
+#PBS -d /home2/niuyw/project/STR/PCA/logs
+
+# WORK DIR
+WORKDIR=/home2/niuyw/project/STR/PCA
+
+# chrom
+echo $chrom
+
+# PPN
+PPN=1
+
+# genome and annotations
+ANNODIR=/home2/niuyw/RefData
+GRCh38_REFERENCE=$ANNODIR/Homo_sapiens/GRCh38_no_alt/genome.fa
+GRCh38_GTF=$ANNODIR/Homo_sapiens/GENCODE_v39/gencode.v39.annotation.gtf
+GRCh38_bowtie2=$ANNODIR/Homo_sapiens/GRCh38_no_alt/Bowtie2Index/GRCh38_no_alt
+GRCh38_STAR=$ANNODIR/Homo_sapiens/GRCh38_no_alt/STARgenomes
+
+# tools dir
+TOOLDIR=/home2/niuyw/software
+path2java=$TOOLDIR/jdk1.8.0_311/bin/java
+path2bedtools=$TOOLDIR/bedtools2/bin/bedtools
+path2samtools=$TOOLDIR/samtools.1.9/bin/samtools
+path2bcftools=$TOOLDIR/bcftools-1.14/bcftools
+export BCFTOOLS_PLUGINS=$TOOLDIR/bcftools-1.14/plugins
+path2picard=$TOOLDIR/picard-2.9.2/picard.jar
+
+echo Start time is `date +%Y/%m/%d--%H:%M`
+
+# NyuWa
+input=$WORKDIR/NyuWa/vcf/${chrom}.vcf.gz
+output=$WORKDIR/NyuWa/mat
+if [ ! -d $output ]; then mkdir -p $output; fi
+python3 $WORKDIR/str_vcf2mat.py -f 0.95 -i $input -o $output/${chrom}.indicator.csv
+
+# EAS
+input=$WORKDIR/EAS/vcf/random1/${chrom}.vcf.gz
+output=$WORKDIR/EAS/mat/random1
+if [ ! -d $output ]; then mkdir -p $output; fi
+python3 $WORKDIR/str_vcf2mat.py -f 0.95 -i $input -o $output/${chrom}.indicator.csv
+
+input=$WORKDIR/EAS/vcf/random2/${chrom}.vcf.gz
+output=$WORKDIR/EAS/mat/random2
+if [ ! -d $output ]; then mkdir -p $output; fi
+python3 $WORKDIR/str_vcf2mat.py -f 0.95 -i $input -o $output/${chrom}.indicator.csv
+
+input=$WORKDIR/EAS/vcf/random3/${chrom}.vcf.gz
+output=$WORKDIR/EAS/mat/random3
+if [ ! -d $output ]; then mkdir -p $output; fi
+python3 $WORKDIR/str_vcf2mat.py -f 0.95 -i $input -o $output/${chrom}.indicator.csv
+
+# world
+input=$WORKDIR/world/vcf/random1/${chrom}.vcf.gz
+output=$WORKDIR/world/mat/random1
+if [ ! -d $output ]; then mkdir -p $output; fi
+python3 $WORKDIR/str_vcf2mat.py -f 0.95 -i $input -o $output/${chrom}.indicator.csv
+
+input=$WORKDIR/world/vcf/random2/${chrom}.vcf.gz
+output=$WORKDIR/world/mat/random2
+if [ ! -d $output ]; then mkdir -p $output; fi
+python3 $WORKDIR/str_vcf2mat.py -f 0.95 -i $input -o $output/${chrom}.indicator.csv
+
+input=$WORKDIR/world/vcf/random3/${chrom}.vcf.gz
+output=$WORKDIR/world/mat/random3
+if [ ! -d $output ]; then mkdir -p $output; fi
+python3 $WORKDIR/str_vcf2mat.py -f 0.95 -i $input -o $output/${chrom}.indicator.csv
+
+echo Finish time is `date +%Y/%m/%d--%H:%M`
+

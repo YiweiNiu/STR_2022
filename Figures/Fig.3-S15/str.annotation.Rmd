@@ -1,0 +1,673 @@
+---
+title: "str.annotation"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "str.annotation"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+- Plot some examples of aSTRs
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggbeeswarm)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+geom.text.size <- 7
+
+# heatmap
+library(pheatmap)
+library(corrplot)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+## 2, 3, 4, 5, 6
+cPalette <- c("#7DA1D4", "#BEDE85", "#DCB070", "#EAAAB0")
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+source(here::here("code/geom_boxplot2.R"))
+```
+
+## Load data
+
+Load STR info
+
+```{r load-str-info, message=FALSE, warning=FALSE}
+str_info <- read_tsv("/niuyw-usb-disk/Projects/STR/str_info/str_info.txt") %>%
+  dplyr::select(site:gene_type) %>%
+  mutate(csq2 = case_when(
+    csq == "upstream" ~ "Promoter",
+    csq == "nc_intron" ~ "Noncoding_intron",
+    csq == "intron" ~ "Coding_intron",
+    csq == "downstream" ~ "Downstream",
+    csq == "UTR3" ~ "3'UTR",
+    csq == "intergenic" ~ "Intergenic",
+    csq == "nc_exon" ~ "Noncoding_exon",
+    csq == "UTR5" ~ "5'UTR",
+    TRUE ~ csq
+  )) %>%
+  mutate(csq2 = factor(csq2, levels = c(
+    "Intergenic", "Downstream", "Promoter",
+    "Noncoding_intron", "Noncoding_exon",
+    "5'UTR", "3'UTR",
+    "Coding_intron", "CDS"
+  ))) %>%
+  mutate(period = case_when(
+    period == 2 ~ "Di-",
+    period == 3 ~ "Tri-",
+    period == 4 ~ "Tet-",
+    period == 5 ~ "Pen-",
+    period == 6 ~ "Hex-"
+  )) %>%
+  mutate(period = factor(period, levels = c("Di-", "Tri-", "Tet-", "Pen-", "Hex-")))
+
+DT::datatable(head(str_info, 10))
+```
+
+GAT
+
+```{r load-gat, message=FALSE, warning=FALSE}
+pstr.gat = read_tsv("/niuyw-usb-disk/Projects/STR/str_annotation/pSTR-merge.tsv") %>%
+  dplyr::select(track, csq = annotation, l2fold, pvalue, qvalue) %>%
+  mutate(csq2 = case_when(
+    csq == "promoter" ~ "Promoter",
+    csq == "noncoding_intron" ~ "Noncoding_intron",
+    csq == "coding_intron" ~ "Coding_intron",
+    csq == "downstream" ~ "Downstream",
+    csq == "utr3" ~ "3'UTR",
+    csq == "intergenic" ~ "Intergenic",
+    csq == "noncoding_exon" ~ "Noncoding_exon",
+    csq == "utr5" ~ "5'UTR",
+    csq == "cds" ~ "CDS",
+    TRUE ~ csq
+  ))
+mstr.gat = read_tsv("/niuyw-usb-disk/Projects/STR/str_annotation/mSTR-merge.tsv") %>%
+  dplyr::select(track, csq = annotation, l2fold, pvalue, qvalue) %>%
+  mutate(csq2 = case_when(
+    csq == "promoter" ~ "Promoter",
+    csq == "noncoding_intron" ~ "Noncoding_intron",
+    csq == "coding_intron" ~ "Coding_intron",
+    csq == "downstream" ~ "Downstream",
+    csq == "utr3" ~ "3'UTR",
+    csq == "intergenic" ~ "Intergenic",
+    csq == "noncoding_exon" ~ "Noncoding_exon",
+    csq == "utr5" ~ "5'UTR",
+    csq == "cds" ~ "CDS",
+    TRUE ~ csq
+  ))
+```
+
+Load gene LOEUF
+
+```{r load-loeuf, message=FALSE, warning=FALSE}
+df_loeuf = read_tsv("/niuyw-usb-disk/Projects/STR/str_annotation/gnomad.v2.1.1.lof_metrics.by_gene.txt") %>%
+  dplyr::select(gene, LOEUF = oe_lof_upper)
+```
+
+## Stats
+
+All
+
+```{r}
+str_info %>%
+  group_by(csq2) %>%
+  summarise(n = n()) %>%
+  mutate(Percent = n/sum(n)*100) %>%
+  DT::datatable(filter = "top")
+```
+
+By period
+
+```{r}
+d_4_p = str_info %>%
+  group_by(period, csq2) %>%
+  summarise(n = n()) %>%
+  mutate(Percent = n/sum(n)*100)
+
+DT::datatable(d_4_p, filter = "top")
+```
+
+Plot
+
+```{r, fig.height=3, fig.width=7.5}
+# percent
+p1 = d_4_p %>%
+  ggplot(aes(x = period, y = Percent, fill = csq2)) +
+  geom_bar(stat = 'identity') +
+  scale_y_continuous(expand = c(0, 0)) +
+  coord_flip() +
+  labs(y = '% of sites', fill = NULL) +
+  scale_fill_jco() +
+  guides(fill = guide_legend(reverse=TRUE)) +
+  theme(axis.title.y = element_blank())
+
+# number
+p2 = d_4_p %>%
+  ggplot(aes(x = period, y = n, fill = csq2)) +
+  geom_bar(stat = 'identity') +
+  scale_y_continuous(expand = c(0, 0),
+                     labels = label_comma()) +
+  coord_flip() +
+  labs(y = '# of sites', fill = NULL) +
+  scale_fill_jco() +
+  guides(fill = guide_legend(reverse=TRUE)) +
+  theme(axis.title.y = element_blank(),
+        axis.text.y = element_blank())
+
+p.csq_stat = p1 + p2 +
+  plot_layout(ncol = 2, guides = "collect")
+p.csq_stat
+```
+
+## GAT
+
+### pSTR
+
+qvalue
+
+```{r}
+p_mat = pstr.gat %>%
+  dplyr::select(csq2, track, qvalue) %>%
+  pivot_wider(names_from = 'track', values_from = 'qvalue') %>%
+  column_to_rownames('csq2') %>%
+  dplyr::select(total, everything())
+
+DT::datatable(p_mat)
+```
+
+Fold change
+
+```{r fig.width=3.5, fig.height=3}
+d_4_p.p = pstr.gat %>%
+  dplyr::select(csq2, track, l2fold) %>%
+  pivot_wider(names_from = 'track', values_from = 'l2fold') %>%
+  column_to_rownames('csq2') %>%
+  dplyr::select(total, `2`, `3`, `4`, `5`, `6`)
+DT::datatable(d_4_p.p)
+
+paletteLength <- 100
+myColor <- colorRampPalette(c("#4DBBD5FF", "white", "#E64B35FF"))(paletteLength)
+# length(breaks) == length(paletteLength) + 1
+# use floor and ceiling to deal with even/odd length pallettelengths
+myBreaks <- c(seq(min(d_4_p.p), 0, length.out=ceiling(paletteLength/2) + 1),
+              seq(max(d_4_p.p)/paletteLength, max(d_4_p.p), length.out=floor(paletteLength/2)))
+
+x = pheatmap(d_4_p.p, cluster_cols = F, treeheight_row = 0,
+         border_color = NA,
+         color = myColor, breaks = myBreaks,
+         fontsize = 10
+         ,gaps_col = c(1)
+         )
+
+pheatmap(d_4_p.p, cluster_cols = F, treeheight_row = 0,
+         border_color = NA,
+         color = myColor, breaks = myBreaks,
+         fontsize = 10
+         ,gaps_col = c(1),
+         height = 3, width = 3.5,
+         filename = here::here("output", DOCNAME, "Fig.GAT.pSTR.pdf")
+         )
+```
+
+### mSTR
+
+qvalue
+
+```{r}
+p_mat = mstr.gat %>%
+  dplyr::select(csq2, track, qvalue) %>%
+  pivot_wider(names_from = 'track', values_from = 'qvalue') %>%
+  column_to_rownames('csq2') %>%
+  dplyr::select(total, everything())
+
+DT::datatable(p_mat)
+```
+
+Fold change
+
+```{r fig.width=3.5, fig.height=3}
+d_4_p.m = mstr.gat %>%
+  dplyr::select(csq2, track, l2fold) %>%
+  pivot_wider(names_from = 'track', values_from = 'l2fold') %>%
+  column_to_rownames('csq2') %>%
+  dplyr::select(total, `2`, `3`, `4`, `5`, `6`)
+
+# change row order
+d_4_p.m = d_4_p.m[rownames(d_4_p.p)[x$tree_row$order],]
+DT::datatable(d_4_p.m)
+
+pheatmap(d_4_p.m, cluster_cols = F,
+         cluster_rows = F,
+         treeheight_row = 0,
+         border_color = NA,
+         color = myColor, breaks = myBreaks,
+         fontsize = 10
+         ,gaps_col = c(1)
+         )
+
+pheatmap(d_4_p.m, cluster_cols = F,
+         cluster_rows = F,
+         treeheight_row = 0,
+         border_color = NA,
+         color = myColor, breaks = myBreaks,
+         fontsize = 10
+         ,gaps_col = c(1),
+         height = 3, width = 3.5,
+         filename = here::here("output", DOCNAME, "Fig.GAT.mSTR.pdf")
+         )
+```
+
+## Allele number and CSQ
+
+By csq2
+
+```{r fig.width=2.5, fig.height=3.5}
+str_info %>%
+  ggplot(aes(x = csq2, y = num.alleles, fill = csq2)) +
+  geom_boxplot2(width = .7, width.errorbar = .5) +
+  scale_fill_jco() +
+  labs(x = NULL, y = "# of alleles per locus", fill = NULL) +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 60, hjust = 1)
+  )
+```
+
+By period by csq2
+
+```{r fig.width=8, fig.height=3}
+p.allele.byPeriod.byCsq = str_info %>%
+  ggplot(aes(x = csq2, y = num.alleles, fill = csq2)) +
+  geom_boxplot2() +
+  scale_fill_jco() +
+  labs(x = NULL, y = "# of alleles per locus", fill = NULL) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "top"
+  ) +
+  facet_wrap(~period, scales = "free_y", nrow = 1) +
+  theme(strip.background = element_rect(fill = "#f3f2f1"))
+p.allele.byPeriod.byCsq
+```
+
+```{r fig.width=8, fig.height=3}
+my_cmp = list(c("Coding_intron", "CDS"))
+
+str_info %>%
+  ggplot(aes(x = csq2, y = num.alleles, fill = csq2)) +
+  geom_boxplot2() +
+  scale_fill_jco() +
+  stat_compare_means(comparisons = my_cmp, label = "p.signif",
+                     tip.length = 0,
+                     label.y = 4) +
+  labs(x = NULL, y = "# of alleles per locus", fill = NULL) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "top"
+  ) +
+  facet_wrap(~period, scales = "free_y", nrow = 1) +
+  theme(strip.background = element_rect(fill = "#f3f2f1"))
+```
+
+By csq2 by period
+
+```{r fig.width=7.5, fig.height=6}
+csq_vec <- rev(levels(str_info$csq2))
+p_lst <- lapply(csq_vec, function(x) {
+  str_info %>%
+    filter(csq2 == x) %>%
+    ggplot(aes(x = period, y = num.alleles, fill = period)) +
+    geom_boxplot2(width = .7, width.errorbar = .5) +
+    scale_fill_manual(values = period_color_map) +
+    labs(
+      x = NULL, y = "# of alleles per locus",
+      title = x,
+      fill = NULL
+    ) +
+    theme(legend.position = "none")
+})
+p_lst %>%
+  wrap_plots(ncol = 4)
+```
+
+## Heterozygosity and CSQ
+
+By csq2
+
+```{r fig.width=2.5, fig.height=3}
+my_cmp = list(c("Coding_intron", "CDS"))
+
+p.het.byCsq = str_info %>%
+  ggplot(aes(x = csq2, y = het, fill = csq2)) +
+  geom_boxplot2(width = .6, width.errorbar = .4) +
+  scale_fill_jco() +
+  stat_compare_means(comparisons = my_cmp,
+                     label.y = 0.023,
+                     tip.length = 0.001,
+                     label = "p.signif") +
+  labs(x = NULL, y = "Heterozygosity", fill = NULL) +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 60, hjust = 1)
+  )
+p.het.byCsq
+```
+
+By period by csq2
+
+```{r fig.width=8, fig.height=3}
+p.het.byPeriod.byCsq = str_info %>%
+  ggplot(aes(x = csq2, y = het, fill = csq2)) +
+  geom_boxplot2() +
+  scale_fill_jco() +
+  labs(x = NULL, y = "Heterozygosity", fill = NULL) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "top"
+  ) +
+  facet_wrap(~period, scales = "free_y", nrow = 1) +
+  theme(strip.background = element_rect(fill = "#f3f2f1"))
+p.het.byPeriod.byCsq
+```
+
+```{r fig.width=8, fig.height=3}
+str_info %>%
+  ggplot(aes(x = csq2, y = het, fill = csq2)) +
+  geom_boxplot2() +
+  scale_fill_jco() +
+  stat_compare_means(comparisons = my_cmp, label = "p.signif",
+                     tip.length = 0) +
+  labs(x = NULL, y = "Heterozygosity", fill = NULL) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "top"
+  ) +
+  facet_wrap(~period, scales = "free_y", nrow = 1) +
+  theme(strip.background = element_rect(fill = "#f3f2f1"))
+```
+
+## Entropy and CSQ
+
+By csq2
+
+```{r fig.width=2.5, fig.height=3}
+p.ent.byCsq = str_info %>%
+  ggplot(aes(x = csq2, y = entropy, fill = csq2)) +
+  geom_boxplot2(width = .6, width.errorbar = .4) +
+  scale_fill_jco() +
+  stat_compare_means(comparisons = my_cmp,
+                     label.y = 0.1,
+                     tip.length = 0.001,
+                     label = "p.signif") +
+  labs(x = NULL, y = "Entropy", fill = NULL) +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 60, hjust = 1)
+  )
+p.ent.byCsq
+```
+
+By period by csq2
+
+```{r fig.width=8, fig.height=3}
+p.ent.byPeriod.byCsq = str_info %>%
+  ggplot(aes(x = csq2, y = entropy, fill = csq2)) +
+  geom_boxplot2() +
+  scale_fill_jco() +
+  labs(x = NULL, y = "Entropy", fill = NULL) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "top"
+  ) +
+  facet_wrap(~period, scales = "free_y", nrow = 1) +
+  theme(strip.background = element_rect(fill = "#f3f2f1"))
+p.ent.byPeriod.byCsq
+```
+
+```{r fig.width=8, fig.height=3}
+str_info %>%
+  ggplot(aes(x = csq2, y = entropy, fill = csq2)) +
+  geom_boxplot2() +
+  scale_fill_jco() +
+  stat_compare_means(comparisons = my_cmp, label = "p.signif",
+                     tip.length = 0) +
+  labs(x = NULL, y = "Entropy", fill = NULL) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "top"
+  ) +
+  facet_wrap(~period, scales = "free_y", nrow = 1) +
+  theme(strip.background = element_rect(fill = "#f3f2f1"))
+```
+
+## LOEUF
+
+### CDS/Coding Intron
+
+```{r fig.width=7.5, fig.height=6}
+df = str_info %>%
+  filter(csq2 %in% c("Coding_intron", "CDS")) %>%
+  dplyr::select(site, period, csq2, gene = gene_symbol) %>%
+  left_join(df_loeuf, by = "gene") %>%
+  filter(!is.na(LOEUF))
+
+# tot
+tmp_df = df %>%
+  mutate(period = "Ho-")
+
+# cmb
+df = rbind(df, tmp_df)
+```
+
+Remove genes containing CDS pSTRs and Intron pSTRs and genes contain several pSTRs
+
+```{r message=FALSE, warning=FALSE}
+rm_genes <- function(dat=NULL, type=NULL, score=NULL) {
+  if (!is.null(type)) {
+    dat = dat %>%
+      filter(period == type)
+  }
+  
+  genes_2_keep = dat %>%
+    group_by(gene, csq2) %>%
+    summarise(n = n()) %>%
+    ungroup() %>%
+    group_by(gene) %>%
+    summarise(n = n()) %>%
+    filter(n == 1) %>% # 删除那些同时有 exon/intron MEIs 的基因
+    pull(gene)
+  
+  dat %>%
+    filter(gene %in% genes_2_keep) %>%
+    group_by(gene, csq2) %>%
+    summarise(n = n()) %>%
+    ungroup() %>%
+    left_join(dat %>%
+                dplyr::select(gene, !! sym(score), period), by = 'gene') %>%
+    distinct(gene, .keep_all = TRUE)
+}
+
+# neat data to gene-level
+df.tot = rm_genes(df, "Ho-", 'LOEUF')
+df.2 = rm_genes(df, 'Di-', 'LOEUF')
+df.3 = rm_genes(df, 'Tri-', 'LOEUF')
+df.4 = rm_genes(df, 'Tet-', 'LOEUF')
+df.5 = rm_genes(df, 'Pen-', 'LOEUF')
+df.6 = rm_genes(df, 'Hex-', 'LOEUF')
+
+df2 = do.call(rbind, list(df.tot, df.2, df.3, df.4, df.5, df.6)) %>%
+  mutate(period = factor(period, levels = c("Ho-", "Di-", "Tri-", "Tet-", "Pen-", "Hex-")))
+```
+
+```{r loeuf-count}
+df2 %>%
+  group_by(period, csq2) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n))
+```
+
+```{r cmp-loeuf-get-p}
+compare_means(LOEUF ~ csq2, data = df2, group.by = 'period')
+```
+
+```{r cmp-loeuf-plot, fig.width=2.5, fig.height=3}
+p.loeuf = df2 %>%
+  ggplot(aes(x = period, y = LOEUF, fill = csq2)) +
+  geom_boxplot(outlier.alpha = 0.1) +
+  stat_compare_means(aes(group = csq2), label = "p.signif") +
+  labs(x = '', y = 'LOEUF', fill = NULL) +
+  scale_fill_manual(values = cPalette[1:2]) +
+  theme(legend.position = "top")
+p.loeuf
+```
+
+### Non-coding Exon/Non-coding Intron
+
+```{r fig.width=7.5, fig.height=6}
+df = str_info %>%
+  filter(csq2 %in% c("Noncoding_intron", "Noncoding_exon")) %>%
+  dplyr::select(site, period, csq2, gene = gene_symbol) %>%
+  left_join(df_loeuf, by = "gene") %>%
+  filter(!is.na(LOEUF))
+
+# tot
+tmp_df = df %>%
+  mutate(period = "Ho-")
+
+# cmb
+df = rbind(df, tmp_df)
+```
+
+Remove genes containing CDS pSTRs and Intron pSTRs and genes contain several pSTRs
+
+```{r message=FALSE, warning=FALSE}
+# neat data to gene-level
+df.2 = rm_genes(df, 'Di-', 'LOEUF')
+df.3 = rm_genes(df, 'Tri-', 'LOEUF')
+df.4 = rm_genes(df, 'Tet-', 'LOEUF')
+df.5 = rm_genes(df, 'Pen-', 'LOEUF')
+df.6 = rm_genes(df, 'Hex-', 'LOEUF')
+
+df2 = do.call(rbind, list(df.2, df.3, df.4, df.5, df.6)) %>%
+  mutate(period = factor(period, levels = c("Di-", "Tri-", "Tet-", "Pen-", "Hex-")))
+```
+
+```{r loeuf-count-2}
+df2 %>%
+  group_by(period, csq2) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n))
+```
+
+```{r cmp-loeuf-get-p-2}
+compare_means(LOEUF ~ csq2, data = df2, group.by = 'period')
+```
+
+```{r cmp-loeuf-plot-2, fig.width=5, fig.height=3}
+df2 %>%
+  ggplot(aes(x = period, y = LOEUF, fill = csq2)) +
+  geom_boxplot(outlier.alpha = 0.1) +
+  stat_compare_means(aes(group = csq2), label = "p.signif") +
+  labs(x = '', y = 'LOEUF', fill = NULL) +
+  scale_fill_manual(values = cPalette[1:2])
+```
+
+## Align plots
+
+### Main
+
+row 1
+
+```{r fig.width=7.5, fig.height=3}
+p.csq_stat
+
+ggsave2(p.csq_stat,
+  filename = here::here("output", DOCNAME, "Fig.annotation_r1.pdf"),
+  height = 3, width = 7.5
+)
+```
+
+row 3
+
+```{r fig.width=7.5, fig.height=3.5}
+r3 = p.het.byCsq + p.ent.byCsq + p.loeuf +
+  plot_layout(nrow = 1)
+r3
+
+ggsave2(r3,
+  filename = here::here("output", DOCNAME, "Fig.annotation_r3.pdf"),
+  height = 3.5, width = 7.5
+)
+```
+
+### Diversity Supp
+
+```{r fig.width=7.5, fig.height=7}
+p.het.byPeriod.byCsq/p.ent.byPeriod.byCsq/p.allele.byPeriod.byCsq +
+  plot_layout(guides = "collect") & theme(legend.position = "top")
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "Fig.annotation_supp.pdf"),
+  height = 7, width = 7.5
+)
+```
+
+## Session info

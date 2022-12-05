@@ -1,0 +1,56 @@
+#!/bin/bash
+#PBS -V
+#PBS -j eo
+#PBS -N chr22.snp_het_1KGP
+#PBS -q Fat
+#PBS -l nodes=1:ppn=4
+#PBS -d /home2/niuyw/project/STR/STR_diversity_SNP_het/logs
+
+# WORK DIR
+WORKDIR=/home2/niuyw/project/STR/STR_diversity_SNP_het
+
+# chrom
+echo $chrom
+
+# PPN
+PPN=4
+
+# genome and annotations
+ANNODIR=/home2/niuyw/RefData
+GRCh38_REFERENCE=$ANNODIR/Homo_sapiens/GRCh38_no_alt/genome.fa
+GRCh38_GTF=$ANNODIR/Homo_sapiens/GENCODE_v27/gencode.v27.annotation.gtf
+GRCh38_bowtie2=$ANNODIR/Homo_sapiens/GRCh38_no_alt/Bowtie2Index/GRCh38_no_alt
+GRCh38_STAR=$ANNODIR/Homo_sapiens/GRCh38_no_alt/STARgenomes
+mm10_REFERENCE=$ANNODIR/Mus_musculus/Bowtie2Index/mm10.fa
+mm10_GTF=$ANNODIR/Mus_musculus/GENCODE_vM18/gencode.vM18.annotation.gtf
+mm10_bowtie2=$ANNODIR/Mus_musculus/Bowtie2Index/mm10
+mm10_STAR=$ANNODIR/Mus_musculus/STARgenomes
+
+# tools dir
+TOOLDIR=/home2/niuyw/software
+path2java=$TOOLDIR/jdk1.8.0_311/bin/java
+path2bedtools=$TOOLDIR/bedtools2/bin/bedtools
+path2samtools=$TOOLDIR/samtools.1.9/bin/samtools
+path2picard=$TOOLDIR/picard-2.9.2/picard.jar
+
+# activate conda
+source $TOOLDIR/anaconda3/bin/activate
+conda activate vcftools
+
+echo Start time is `date +%Y/%m/%d--%H:%M`
+
+input=/Parastor300s_G30S/Resources/1KGP_highcoverage2/CCDG_14151_B01_GRM_WGS_2020-08-05_${chrom}.filtered.shapeit2-duohmm-phased.vcf.gz
+output=$WORKDIR/snp_het_1KGP
+
+if [ ! -d $output ]; then mkdir -p $output; fi
+
+# get biAllelic SNPs
+$TOOLDIR/bcftools-1.14/bin/bcftools view --threads $PPN -c 1 -m 2 -M 2 -v snps --samples-file /home2/niuyw/project/STR/samples/1KGP_2504.sample_lst -Oz -o $output/${chrom}.biSNP.vcf.gz $input
+
+# het
+vcftools --gzvcf $output/${chrom}.biSNP.vcf.gz --het --out $output/${chrom}.het
+
+echo Finish time is `date +%Y/%m/%d--%H:%M`
+
+
+

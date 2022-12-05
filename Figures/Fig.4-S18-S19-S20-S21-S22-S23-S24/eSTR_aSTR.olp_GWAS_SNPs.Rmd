@@ -1,0 +1,285 @@
+---
+title: "eSTR_aSTR.olp_GWAS_SNPs"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "eSTR_aSTR.olp_GWAS_SNPs"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+Check the OLP between eSTR/aSTR and GWAS SNPs
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggbeeswarm)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+geom.text.size <- 7
+
+# heatmap
+library(pheatmap)
+library(corrplot)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# enrich
+library(clusterProfiler)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+## GWAS SNPs
+
+### Load data
+
+Load STR-gene pairs in eSTR/aSTR identification
+
+```{r load-STR-gene-pairs, message=FALSE, warning=FALSE, cache=FALSE}
+df.str_gene_pair = read_csv("/niuyw-usb-disk/Projects/STR/eSTR/Geuvadis_445.str_gene_pair.csv")
+head(df.str_gene_pair)
+```
+
+Load STR info
+
+```{r load-info, cache=FALSE, warning=FALSE, message=FALSE}
+str_info = read_tsv("/T02Data/niuyw/niuyw-usb-disk/Projects/STR/str_info/str_info.txt") %>%
+  mutate(in_consideration = case_when(
+    site %in% df.str_gene_pair$site ~ "Yes",
+    TRUE ~ "No"
+  )) %>%
+  dplyr::select(site, in_consideration, gwas.snp, gwas.trait, eSTR.gene, aSTR.gene)
+```
+
+### eTSR
+
+Hypergeometric test
+
+```{r}
+# observed
+o = str_info %>% filter(!is.na(gwas.snp), !is.na(eSTR.gene)) %>% pull(site) %>% length()
+
+# number of eSTRs
+eNum = str_info %>% filter(!is.na(eSTR.gene)) %>%  pull(site) %>% length()
+
+N = str_info %>% filter(in_consideration == "Yes") %>% pull(site) %>% length()
+K = str_info %>% filter(!is.na(gwas.snp), in_consideration == "Yes") %>% pull(site) %>% length()
+n = eNum
+k = o
+
+phyper(k-1, K, N-K, n, lower.tail=FALSE)
+```
+
+Permutation test
+
+```{r fig.width=3.5, fig.height=3}
+# permute
+e = sapply(1:1000, function(x) {
+  str_info %>%
+    filter(in_consideration == "Yes") %>%
+    sample_n(eNum) %>%
+    filter(!is.na(gwas.snp)) %>% pull(site) %>% length()
+})
+
+p.eSTR.hist = data.frame(x = e) %>%
+  ggplot(aes(x = x)) +
+  geom_histogram(binwidth = 5, fill = "#1f77b4") +
+  geom_vline(xintercept = o,
+             linetype = "dashed",
+             color = "red") + 
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Number of STRs tagged by GWAS SNPs (R2 >= 0.7)",
+       y = NULL,
+       title = "Permutation (Randomly chosen pSTRs)")
+p.eSTR.hist
+```
+
+P value
+
+```{r}
+sum(e > eNum)/1000
+```
+
+### aTSR
+
+Hypergeometric test
+
+```{r}
+# observed
+o = str_info %>% filter(!is.na(gwas.snp), !is.na(aSTR.gene)) %>% pull(site) %>% length()
+
+# number of aSTRs
+aNum = str_info %>% filter(!is.na(aSTR.gene)) %>%  pull(site) %>% length()
+
+N = str_info %>% filter(in_consideration == "Yes") %>% pull(site) %>% length()
+K = str_info %>% filter(!is.na(gwas.snp)) %>% pull(site) %>% length()
+n = aNum
+k = o
+
+phyper(k-1, K, N-K, n, lower.tail=FALSE)
+```
+
+Permutation
+
+```{r fig.width=3.5, fig.height=3}
+# permute
+e = sapply(1:1000, function(x) {
+  str_info %>%
+    filter(in_consideration == "Yes") %>%
+    sample_n(aNum) %>%
+    filter(!is.na(gwas.snp)) %>% pull(site) %>% length()
+})
+
+p.aSTR.hist = data.frame(x = e) %>%
+  ggplot(aes(x = x)) +
+  geom_histogram(binwidth = 5, fill = "#1f77b4") +
+  geom_vline(xintercept = o,
+             linetype = "dashed",
+             color = "red") + 
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Number of STRs tagged by GWAS SNPs (R2 >= 0.7)",
+       y = NULL,
+       title = "Permutation (Randomly chosen pSTRs)")
+p.aSTR.hist
+```
+
+P value
+
+```{r}
+sum(e > aNum)/1000
+```
+
+## GWAS genes
+
+### Load data
+
+Load gene anno
+
+```{r load-gene-anno, cache=FALSE, warning=FALSE, message=FALSE}
+df_anno = read_tsv(here::here("data/anno.table")) %>%
+  dplyr::rename(gene = GeneID)
+```
+
+Load eSTR
+
+```{r load-eSTR, cache=FALSE, warning=FALSE, message=FALSE}
+df_eSTR = readRDS(here::here("output/eSTR.identification/df.eSTR.rds")) %>%
+  filter(final.p < 0.1) %>%
+  left_join(df_anno, by = "gene")
+```
+
+Load aSTR
+
+```{r load-aSTR, cache=FALSE, warning=FALSE, message=FALSE}
+df_aSTR = readRDS(here::here("output/aSTR.identification/df.aSTR.rds")) %>%
+  dplyr::rename(gene  = gene_id) %>%
+  filter(final.p < 0.1) %>%
+  left_join(df_anno, by = "gene")
+```
+
+Load GWAS trait genes
+
+```{r load-gwa-trait-genes, cache=FALSE, warning=FALSE, message=FALSE}
+gmt_gwas_genes = read.gmt('/T02Data/niuyw/RefData/GWAS_Catalog/gwasCatalog_genes.gmt')
+```
+
+### eSTR
+
+```{r fig.width=4.5, fig.height=3}
+eGenes = unique(df_eSTR$GeneName)
+e.eGenes = enricher(eGenes, TERM2GENE = gmt_gwas_genes)
+
+p.eSTR.ora = barplot(e.eGenes) +
+  theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+)
+p.eSTR.ora
+```
+
+### aSTR
+
+```{r, fig.width=4, fig.height=3}
+aGenes = unique(df_aSTR$GeneName)
+e.aGenes = enricher(aGenes, TERM2GENE = gmt_gwas_genes)
+
+p.aSTR.ora = barplot(e.aGenes) +
+  theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+)
+p.aSTR.ora
+```
+
+## Align plots
+
+```{r fig.width=8, fig.height=6}
+p1 = p.eSTR.hist + p.eSTR.ora +
+  plot_layout(ncol = 2)
+p2 = p.aSTR.hist + p.aSTR.ora +
+  plot_layout(ncol = 2)
+
+p = p1/p2
+p
+
+ggsave(p, filename = here::here("output", DOCNAME, "Fig.eSTR_aSTR.olp_GWAS_SNPs.pdf"),
+       height = 6, width = 8)
+saveRDS(p, file = here::here("output", DOCNAME, "Fig.eSTR_aSTR.olp_GWAS_SNPs.rds"))
+```
+
+## Session info
+

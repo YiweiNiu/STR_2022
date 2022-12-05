@@ -1,0 +1,49 @@
+#!/bin/bash
+#PBS -V
+#PBS -j eo
+#PBS -N chr22.getMoreAF
+#PBS -q Fat
+#PBS -l nodes=1:ppn=4
+#PBS -d /home2/niuyw/project/STR/str_stat/AF/logs
+
+# WORK DIR
+WORKDIR=/home2/niuyw/project/STR/str_stat/AF
+
+# chrom
+#chrom=chr22
+echo $chrom
+
+# PPN
+PPN=4
+
+# tools dir
+TOOLDIR=/home2/niuyw/software
+path2bcftools=$TOOLDIR/bcftools-1.14/bcftools
+export BCFTOOLS_PLUGINS=$TOOLDIR/bcftools-1.14/plugins
+
+echo Start time is `date +%Y/%m/%d--%H:%M`
+
+input=/home2/niuyw/project/STR/02_FilteredRaw220116/${chrom}-filter-add.vcf.gz
+samInfoDir=/home2/niuyw/project/STR/samples
+
+# dataset
+output=$WORKDIR/${chrom}.dataset.txt
+$path2bcftools view --threads $PPN -i 'INFO/PERIOD <= 6' -Ou $input | \
+  $path2bcftools +fill-tags --threads $PPN -Ou - -- -t AC,AN,AF,MAF -S $samInfoDir/sam_2_dataset.txt | \
+  $path2bcftools query -H -f '%CHROM %POS %AN %AC %AF %MAF %AN_1KGP %AC_1KGP %AF_1KGP %MAF_1KGP %AN_NyuWa %AC_NyuWa %AF_NyuWa %MAF_NyuWa\n' - -o $output
+
+# super pop
+output=$WORKDIR/${chrom}.superPop.txt
+$path2bcftools view --threads $PPN -i 'INFO/PERIOD <= 6' -Ou $input | \
+  $path2bcftools +fill-tags --threads $PPN -Ou - -- -t AC,AN,AF,MAF -S $samInfoDir/sam_2_SPop.txt | \
+  $path2bcftools query -H -f '%CHROM %POS %AN_AFR %AC_AFR %AF_AFR %MAF_AFR %AN_AMR %AC_AMR %AF_AMR %MAF_AMR %AN_EAS %AC_EAS %AF_EAS %MAF_EAS %AN_EUR %AC_EUR %AF_EUR %MAF_EUR %AN_SAS %AC_SAS %AF_SAS %MAF_SAS\n' - -o $output
+
+# pop
+output=$WORKDIR/${chrom}.pop.txt
+$path2bcftools view --threads $PPN -i 'INFO/PERIOD <= 6' -Ou $input | \
+  $path2bcftools +fill-tags --threads $PPN -Ou - -- -t AC,AN,AF,MAF -S $samInfoDir/sam_2_Pop.txt | \
+  $path2bcftools query -H -f '%CHROM %POS %AN_ACB %AC_ACB %AF_ACB %MAF_ACB %AN_ASW %AC_ASW %AF_ASW %MAF_ASW %AN_BEB %AC_BEB %AF_BEB %MAF_BEB %AN_CDX %AC_CDX %AF_CDX %MAF_CDX %AN_CEU %AC_CEU %AF_CEU %MAF_CEU %AN_CHB.1KGP %AC_CHB.1KGP %AF_CHB.1KGP %MAF_CHB.1KGP %AN_CHN.NyuWa %AC_CHN.NyuWa %AF_CHN.NyuWa %MAF_CHN.NyuWa %AN_CHS.1KGP %AC_CHS.1KGP %AF_CHS.1KGP %MAF_CHS.1KGP %AN_CHS.NyuWa %AC_CHS.NyuWa %AF_CHS.NyuWa %MAF_CHS.NyuWa %AN_CLM %AC_CLM %AF_CLM %MAF_CLM %AN_ESN %AC_ESN %AF_ESN %MAF_ESN %AN_FIN %AC_FIN %AF_FIN %MAF_FIN %AN_GBR %AC_GBR %AF_GBR %MAF_GBR %AN_GIH %AC_GIH %AF_GIH %MAF_GIH %AN_GWD %AC_GWD %AF_GWD %MAF_GWD %AN_IBS %AC_IBS %AF_IBS %MAF_IBS %AN_ITU %AC_ITU %AF_ITU %MAF_ITU %AN_JPT %AC_JPT %AF_JPT %MAF_JPT %AN_KHV %AC_KHV %AF_KHV %MAF_KHV %AN_LWK %AC_LWK %AF_LWK %MAF_LWK %AN_MSL %AC_MSL %AF_MSL %MAF_MSL %AN_MXL %AC_MXL %AF_MXL %MAF_MXL %AN_PEL %AC_PEL %AF_PEL %MAF_PEL %AN_PJL %AC_PJL %AF_PJL %MAF_PJL %AN_PUR %AC_PUR %AF_PUR %MAF_PUR %AN_STU %AC_STU %AF_STU %MAF_STU %AN_TSI %AC_TSI %AF_TSI %MAF_TSI %AN_YRI %AC_YRI %AF_YRI %MAF_YRI\n' - -o $output
+
+
+echo Finish time is `date +%Y/%m/%d--%H:%M`
+

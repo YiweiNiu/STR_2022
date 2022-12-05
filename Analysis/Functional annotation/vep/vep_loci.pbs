@@ -1,0 +1,37 @@
+#!/bin/bash
+#PBS -V
+#PBS -j eo
+#PBS -N chr22.vep_loci
+#PBS -q Fat
+#PBS -l nodes=1:ppn=1
+#PBS -d /home2/niuyw/project/STR/vep_loci/logs
+
+# chrom
+echo $chrom
+
+# WORK DIR
+WORKDIR=/home2/niuyw/project/STR/vep_loci
+
+# PPN
+PPN=1
+
+# genome and annotations
+ANNODIR=/home2/niuyw/RefData
+REFERENCE=/wgs/anno/hg38/v0/Homo_sapiens_assembly38.fasta
+
+# tools dir
+TOOLDIR=/home2/niuyw/software
+
+# vep
+source $TOOLDIR/anaconda3/bin/activate
+conda activate vep
+
+echo Start time is `date +%Y/%m/%d--%H:%M`
+
+# input
+input=/home2/niuyw/project/STR/02_FilteredRaw220120/${chrom}.vcf.gz
+
+vep -q  --fork $PPN --offline --cache --dir_cache $ANNODIR/VEP_cache --species homo_sapiens --fasta $REFERENCE --input_file $input --pick --sift b --polyphen b --hgvs --symbol --canonical --biotype --protein --domains --uniprot --tsl --numbers --distance 2000,1000 --force_overwrite --output_file $WORKDIR/${chrom}.vep.txt --stats_file $WORKDIR/${chrom}.vep.stat.html --plugin LoF,loftee_path:/parastor300/wangjj/software/src/ensembl-vep/loftee-1.0.3,human_ancestor_fa:/parastor300/wangjj/software/src/ensembl-vep/Database/human_ancestor.fa.gz,conservation_file:/parastor300/wangjj/software/src/ensembl-vep/Database/phylocsf_gerp.sql
+
+echo End time is `date +%Y/%m/%d--%H:%M`
+

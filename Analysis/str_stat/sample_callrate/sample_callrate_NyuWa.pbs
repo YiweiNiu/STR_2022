@@ -1,0 +1,42 @@
+#!/bin/bash
+#PBS -V
+#PBS -j eo
+#PBS -N chr22_callrate_NyuWa
+#PBS -q Fat
+#PBS -l nodes=1:ppn=1
+#PBS -d /home2/niuyw/project/STR/str_stat/sample_callrate/logs
+
+# WORK DIR
+WORKDIR=/home2/niuyw/project/STR/str_stat/sample_callrate
+
+# chrom
+echo $chrom
+
+# PPN
+PPN=1
+
+# genome and annotations
+ANNODIR=/home2/niuyw/RefData
+GRCh38_REFERENCE=$ANNODIR/Homo_sapiens/GRCh38_no_alt/genome.fa
+GRCh38_GTF=$ANNODIR/Homo_sapiens/GENCODE_v27/gencode.v27.annotation.gtf
+GRCh38_bowtie2=$ANNODIR/Homo_sapiens/GRCh38_no_alt/Bowtie2Index/GRCh38_no_alt
+GRCh38_STAR=$ANNODIR/Homo_sapiens/GRCh38_no_alt/STARgenomes
+mm10_REFERENCE=$ANNODIR/Mus_musculus/Bowtie2Index/mm10.fa
+mm10_GTF=$ANNODIR/Mus_musculus/GENCODE_vM18/gencode.vM18.annotation.gtf
+mm10_bowtie2=$ANNODIR/Mus_musculus/Bowtie2Index/mm10
+mm10_STAR=$ANNODIR/Mus_musculus/STARgenomes
+
+# tools dir
+TOOLDIR=/home2/niuyw/software
+path2java=$TOOLDIR/jdk1.8.0_311/bin/java
+path2bedtools=$TOOLDIR/bedtools2/bin/bedtools
+path2samtools=$TOOLDIR/samtools.1.9/bin/samtools
+path2picard=$TOOLDIR/picard-2.9.2/picard.jar
+
+input=/home2/niuyw/project/STR/01_mergeByChrom/${chrom}.NyuWa.vcf.gz
+output=$WORKDIR/${chrom}.NyuWa.txt
+
+time python $WORKDIR/sample_callrate.py -i $input -o $output
+
+echo Finish time is `date +%Y/%m/%d--%H:%M`
+

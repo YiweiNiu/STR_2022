@@ -1,0 +1,210 @@
+---
+title: "eSTR.cmp_GTEx"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "eSTR.cmp_GTEx"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+- 与 [(Fotsing et al., 2019)](https://www.nature.com/articles/s41588-019-0521-9) 的 eSTRs 进行比较
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(ggpmisc)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 8, # Overall font size
+  rel_small = 8 / 8, # axis tick labels
+  rel_tiny = 6 / 8, # caption
+  rel_large = 8 / 8 # title
+))
+geom.text.size <- 7
+
+# heatmap
+library(pheatmap)
+library(corrplot)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+Load OLP site (ALL)
+
+```{r load-olp-site, cache=FALSE, message=FALSE, warning=FALSE}
+ts <- c(
+  "ALL", "Adipose-Subcutaneous", "Adipose-Visceral", "Artery-Aorta", "Artery-Tibial", "Brain-Caudate",
+  "Brain-Cerebellum", "Cells-Transformedfibroblasts", "Esophagus-Mucosa", "Esophagus-Muscularis",
+  "Heart-LeftVentricle", "Lung", "Muscle-Skeletal", "Nerve-Tibial", "Skin-NotSunExposed",
+  "Skin-SunExposed", "Thyroid", "WholeBlood"
+)
+olp_site <- lapply(ts, function(x) {
+  read_delim(file.path("/niuyw-usb-disk/Projects/STR/eSTR/cmp_GTEx", paste0("OLP.", paste0(x, ".txt"))), delim = "\t")
+})
+names(olp_site) <- ts
+```
+
+## Plot
+
+Site
+
+```{r fig.width=2.5, fig.height=2.5}
+d4p <- olp_site$ALL %>%
+  mutate(Type = case_when(
+    signif == TRUE ~ "eSTR",
+    beta * beta.g > 0 ~ "No",
+    TRUE ~ "Yes"
+  ))
+d4label_cor <- d4p %>% filter(signif == TRUE)
+
+p = d4p %>%
+  ggplot(aes(x = beta, y = beta.g, color = Type, group = 1)) +
+  geom_point_rast(size = .7, raster.dpi = 600, dev = "ragg") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  stat_correlation(
+    size = 3,
+    aes(label = paste(after_stat(r.label),
+      after_stat(n.label),
+      sep = "*\"; \"*"
+    ))
+  ) +
+  stat_correlation(
+    size = 3,
+    label.x = "right",
+    label.y = "bottom",
+    data = d4label_cor,
+    mapping = aes(
+      x = beta, y = beta.g,
+      label = paste(after_stat(r.label),
+        after_stat(n.label),
+        sep = "*\"; \"*"
+      )
+    ),
+    inherit.aes = FALSE
+  ) +
+  xlim(-.81, .81) +
+  ylim(-.81, .81) +
+  scale_color_manual(values = c("#ca3226", "#476fa9", "#d6d6d6")) +
+  labs(
+    title = NULL, x = "Effect size (this study)",
+    y = "Effect size (Fotsing 2019)"
+  ) +
+  theme(legend.position = "none")
+p
+ggsave(p, filename = here::here("output", DOCNAME, "Fig.cmp_GTEx.ALL.pdf"),
+       height = 2.5, width = 2.5)
+saveRDS(p, file = here::here("output", DOCNAME, "Fig.cmp_GTEx.ALL.rds"))
+```
+
+All tissue
+
+```{r fig.width=8, fig.height=10}
+p <- lapply(1:length(ts), function(i) {
+  t <- ts[i]
+  x <- olp_site[[t]]
+
+  d4p <- x %>%
+    mutate(Type = case_when(
+      signif == TRUE ~ "eSTR",
+      beta * beta.g > 0 ~ "No",
+      TRUE ~ "Yes"
+    ))
+  d4label_cor <- d4p %>% filter(signif == TRUE)
+
+  d4p %>%
+    ggplot(aes(x = beta, y = beta.g, color = Type, group = 1)) +
+    geom_point_rast(size = .6, raster.dpi = 600, dev = "ragg") +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    geom_vline(xintercept = 0, linetype = "dashed") +
+    stat_correlation(
+      size = 2,
+      aes(label = paste(after_stat(r.label),
+        after_stat(n.label),
+        sep = "*\"; \"*"
+      ))
+    ) +
+    stat_correlation(
+      size = 2,
+      label.x = "right",
+      label.y = "bottom",
+      data = d4label_cor,
+      mapping = aes(
+        x = beta, y = beta.g,
+        label = paste(after_stat(r.label),
+          after_stat(n.label),
+          sep = "*\"; \"*"
+        )
+      ),
+      inherit.aes = FALSE
+    ) +
+    xlim(-.81, .81) +
+    ylim(-.81, .81) +
+    scale_color_manual(values = c("#ca3226", "#476fa9", "#d6d6d6")) +
+    labs(
+      title = t, x = "Effect size (this study)",
+      y = "Effect size (Fotsing 2019)"
+    ) +
+    theme(
+      legend.position = "none",
+      plot.title = element_text(face = "plain")
+    )
+}) %>%
+  wrap_plots(ncol = 4)
+p
+ggsave(p,
+ filename = here::here("output", DOCNAME, "Fig.cmp_GTEx.each_tissue.pdf"),
+ height = 10, width = 8
+)
+saveRDS(p, file = here::here("output", DOCNAME, "Fig.cmp_GTEx.each_tissue.rds"))
+```
+
+
+## Session info

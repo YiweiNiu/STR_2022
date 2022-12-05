@@ -1,0 +1,136 @@
+---
+title: "eSTR.cmp_Gymrek_2016"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "eSTR.cmp_Gymrek_2016"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+- 与 [(Gymrek et al., 2016)](https://www.nature.com/articles/ng.3461) 的 eSTRs 进行比较
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(ggpmisc)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+geom.text.size <- 7
+
+# heatmap
+library(pheatmap)
+library(corrplot)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+Load OLP site (ALL)
+
+```{r load-olp-site, cache=FALSE, message=FALSE, warning=FALSE}
+olp_site <- read_delim("/niuyw-usb-disk/Projects/STR/eSTR/cmp_Gymrek_2016/OLP.ALL.txt", delim = "\t")
+```
+
+## Plot
+
+```{r fig.width=2.5, fig.height=2.5}
+d4p <- olp_site %>%
+  mutate(Type = case_when(
+    signif == TRUE ~ "eSTR",
+    beta * beta.g > 0 ~ "No",
+    TRUE ~ "Yes"
+  ))
+d4label_cor <- d4p %>% filter(signif == TRUE)
+
+p <- d4p %>%
+  ggplot(aes(x = beta, y = beta.g, color = Type, group = 1)) +
+  geom_point_rast(size = .7, raster.dpi = 600, dev = "ragg") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  stat_correlation(
+    size = 3,
+    aes(label = paste(after_stat(r.label),
+      after_stat(n.label),
+      sep = "*\"; \"*"
+    ))
+  ) +
+  stat_correlation(
+    size = 3,
+    label.y = "bottom",
+    label.x = "right",
+    data = d4label_cor,
+    mapping = aes(
+      x = beta, y = beta.g,
+      label = paste(after_stat(r.label),
+        after_stat(n.label),
+        sep = "*\"; \"*"
+      )
+    ),
+    inherit.aes = FALSE
+  ) +
+  xlim(-.8, .8) +
+  ylim(-.8, .8) +
+  scale_color_manual(values = c("#ca3226", "#476fa9", "#d6d6d6")) +
+  labs(
+    title = NULL, x = "Effect size (this study)",
+    y = "Effect size (Gymrek 2016)"
+  ) +
+  guides(color = FALSE)
+p
+ggsave(p, filename = here::here("output", DOCNAME, "Fig.cmp_Gymrek_2016.pdf"),
+       height = 2.5, width = 2.5)
+saveRDS(p, file = here::here("output", DOCNAME, "Fig.cmp_Gymrek_2016.rds"))
+```
+
+## Session info

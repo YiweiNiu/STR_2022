@@ -1,0 +1,291 @@
+---
+title: "aSTR.preprocess_pudi"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "aSTR.preprocess_pudi"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+- 处理 Geuvadis 项目的 DaPars2 数据
+
+- 用于 QTL 分析
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 12, # axis.title
+  rel_small = 10 / 12, # axis.text
+  rel_tiny = 9 / 12,
+  rel_large = 12 / 12
+))
+
+# heatmap
+library(pheatmap)
+library(corrplot)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+
+# hidden factor
+library(SummarizedExperiment)
+library(iasva)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+Load PCA eigenvec
+
+```{r load-eigenvec, cache=FALSE, warning=FALSE, message=FALSE}
+pop_pc10 <- read_delim("/niuyw-usb-disk/Projects/Geuvadis/geno_pca/autosome_maf0.05_pca.eigenvec",
+  delim = " ",
+  col_names = FALSE
+) %>%
+  dplyr::select(-X2)
+```
+
+Load sample info
+
+```{r load-sam-info, message=FALSE, warning=FALSE, cache=FALSE}
+sam_info <- read_tsv("/niuyw-usb-disk/Projects/Geuvadis/count/targets.txt") %>%
+  column_to_rownames("sample")
+```
+
+Load RAN-seq exp
+
+```{r load-exp, cache=FALSE, warning=FALSE, message=FALSE}
+# load exp
+rna_exp <- readRDS(here::here("output", "eSTR.preprocess_exp", "Geuvadis.exp_adjusted.rds"))
+rna_exp[1:3, 1:3]
+```
+
+Load DaPars2 result
+
+```{r load-pudi, cache=FALSE, warning=FALSE, message=FALSE}
+df.DaPars2 = read_delim("/niuyw-usb-disk/Projects/Geuvadis/DaPars2/DaPars2.res.txt", delim = "\t")
+df.DaPars2[1:3, 1:5]
+```
+
+## Neat
+
+Filter samples
+
+```{r filter-samples}
+sam_info <- sam_info[pop_pc10$X1, ]
+table(sam_info$sex)
+table(sam_info$pop)
+table(sam_info$spop)
+```
+
+Get PUDI table, and filter
+
+```{r neat-pudi}
+df.pudi = df.DaPars2 %>%
+  column_to_rownames("Gene")
+# 445 samples
+df.pudi = df.pudi[, rownames(rna_exp)]
+dim(df.pudi)
+
+# transcripts with missing values in > 50% of individuals were removed.
+df.pudi = df.pudi[rowSums(is.na(df.pudi)) < 445/2, ]
+dim(df.pudi)
+
+# remove rows with SD = 0
+x = apply(df.pudi, 1, function(i){sd(i, na.rm = TRUE)})
+df.pudi = df.pudi[x != 0,]
+dim(df.pudi)
+```
+
+Test if we could keep genes used eSTR analysis. The number is OK.
+
+```{r test-filter-by-gene}
+df.pudi %>%
+  rownames_to_column("Gene") %>%
+  mutate(gene = str_split(Gene, "[|]", simplify = TRUE)[,2]) %>%
+  filter(gene %in% colnames(rna_exp)) %>%
+  dim()
+```
+
+Keep only genes used in eSTR analysis
+
+```{r filter-pudi-by-gene}
+df.pudi = df.pudi %>%
+  rownames_to_column("Gene") %>%
+  mutate(gene = str_split(Gene, "[|]", simplify = TRUE)[,2]) %>%
+  filter(gene %in% colnames(rna_exp)) %>%
+  dplyr::select(-gene) %>%
+  column_to_rownames("Gene")
+dim(df.pudi)
+
+# use transcript as rowname
+rownames(df.pudi) = str_split(rownames(df.pudi), "[|]", simplify = TRUE)[,1]
+df.pudi[1:3, 1:3]
+```
+
+## Run IA-SVA
+
+With the following covariates
+
+- sex
+
+- 10 PCs for population structure
+
+```{r run-iasva}
+set.seed(100)
+
+# known factors
+mod <- model.matrix(~ sam_info$sex +
+  pop_pc10$X3 + pop_pc10$X4 + pop_pc10$X5 + pop_pc10$X6 + pop_pc10$X7 +
+  pop_pc10$X8 + pop_pc10$X9 + pop_pc10$X10 + pop_pc10$X11 + pop_pc10$X12)
+
+# create a summarizedexperiment class
+summ_exp <- SummarizedExperiment(assays = na.omit(df.pudi))
+
+# run
+iasva.res <- iasva(summ_exp, mod[, -1],
+  verbose = FALSE,
+  permute = FALSE, num.sv = 20
+)
+```
+
+## Plot
+
+Get res
+
+```{r get-res}
+iasva.sv <- iasva.res$sv
+iasva.sv[1:3, 1:3]
+```
+
+Correlation of SVs
+
+```{r , fig.width=4, fig.height=5}
+corrplot(cor(iasva.sv), type = "lower",
+         method = "square", tl.cex = 0.8)
+pdf(here::here("output", DOCNAME, "Fig.iasva_sv.corrplot.pdf"),
+    height = 5, width = 4)
+corrplot(cor(iasva.sv), type = "lower", method = "square", tl.cex = 0.8)
+dev.off()
+```
+
+Plot SVs
+
+```{r, fig.width=3.5, fig.height=5}
+d4p = cbind(sam_info, as.data.frame(iasva.sv))
+
+p.SV1SV2 = d4p %>%
+  ggplot(aes(x = SV1, y = SV2, color = pop)) +
+  geom_point_rast() +
+  scale_color_jco()
+p.SV3SV4 = d4p %>%
+  ggplot(aes(x = SV3, y = SV4, color = pop)) +
+  geom_point_rast() +
+  scale_color_jco()
+
+p.SV.sample_scatter = p.SV1SV2 + p.SV3SV4 +
+  plot_layout(guides = "collect", ncol = 1)
+p.SV.sample_scatter
+
+ggsave(p.SV.sample_scatter, filename = here::here("output", DOCNAME, "Fig.iasva_sv.sample_scatter.pdf"),
+       height = 5, width = 3.5)
+saveRDS(p.SV.sample_scatter, file = here::here("output", DOCNAME, "Fig.iasva_sv.sample_scatter.rds"))
+```
+
+## Adjust pudi
+
+Prepare dat for linear model
+
+```{r prepare-dat}
+# exp
+dat <- as.data.frame(t(df.pudi))
+# PCA
+dat <- cbind(pop_pc10[, -1], dat)
+colnames(dat)[1:10] <- paste0("PC", 1:10)
+# sex
+dat$sex <- sam_info$sex
+# SV
+dat <- cbind(dat, as.data.frame(iasva.sv[, 1:15]))
+```
+
+Linear model to adjust
+
+```{r linear-model, eval=FALSE}
+# genes
+genes <- rownames(df.pudi)
+
+# formula
+univ_formulas <- sapply(genes, function(y) {
+  #print(y)
+  as.formula(paste0(y, " ~ sex+PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+SV1+SV2+SV3+SV4+SV5+SV6+SV7+SV8+SV9+SV10+SV11+SV12+SV13+SV14+SV15"))
+})
+
+# adjust exp
+dat_adj <- sapply(univ_formulas, function(f) {
+  # print(f)
+  lm.res <- lm(f, data = dat, na.action = na.exclude)
+  residuals(lm.res)
+})
+
+# to data.frame
+dat_adj = as.data.frame(dat_adj)
+dat_adj[1:3, 1:3]
+```
+
+## Save
+
+```{r save, cache=FALSE, eval=FALSE}
+saveRDS(df.pudi, file = here::here("output", DOCNAME, "Geuvadis.df.pudi.rds"))
+saveRDS(iasva.res, file = here::here("output", DOCNAME, "Geuvadis.iasva.res.rds"))
+saveRDS(dat_adj, file = here::here("output", DOCNAME, "Geuvadis.pudi_adjusted.rds"))
+```
+
+

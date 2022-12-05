@@ -1,0 +1,376 @@
+---
+title: "eSTR.identification"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "eSTR.identification"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+- First, run `eSTR.identification.R` 和 `eSTR.identification.permuted.R`
+
+- Neat eSTR identification results
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+
+# heatmap
+library(pheatmap)
+library(corrplot)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+## Load data
+
+Load exp
+
+```{r load-exp, cache=FALSE, warning=FALSE, message=FALSE}
+rna_exp = readRDS(here::here("output", "eSTR.preprocess_exp", "Geuvadis.exp_adjusted.rds"))
+rna_exp[1:3, 1:3]
+```
+
+Load STR geno
+
+```{r load-STR-geno, cache=FALSE, warning=FALSE, message=FALSE}
+str_geno = read_csv("/niuyw-usb-disk/Projects/STR/eSTR/Geuvadis_445.str_geno.csv") %>%
+  column_to_rownames("site")
+str_geno[1:3, 1:3]
+```
+
+Load STR-gene pairs
+
+```{r load-STR-gene-pairs, message=FALSE, warning=FALSE, cache=FALSE}
+df.str_gene_pair = read_csv("/niuyw-usb-disk/Projects/STR/eSTR/Geuvadis_445.str_gene_pair.csv")
+head(df.str_gene_pair)
+```
+
+Load eSTR result
+
+```{r load-eSTR-res, message=FALSE, warning=FALSE, cache=FALSE}
+fit_res = readRDS(here::here("output", DOCNAME, "eSTR.exp_str.glm_fit.rds"))
+fit_res.permuted = readRDS(here::here("output", DOCNAME, "eSTR.exp_str.glm_fit.permuted.rds"))
+```
+
+## Neat
+
+No. of pairs
+
+```{r pairs}
+dim(df.str_gene_pair)
+```
+
+No. of genes
+
+```{r gene-str-neat}
+# gene-str lst
+gene_str_lst = split(df.str_gene_pair$site, df.str_gene_pair$gene_id)
+length(gene_str_lst)
+mean(sapply(gene_str_lst, length, simplify = TRUE))
+```
+
+No. of STRs
+
+```{r STR-gene-neat}
+# gene-str lst
+str_gene_lst = split(df.str_gene_pair$gene_id, df.str_gene_pair$site)
+length(str_gene_lst)
+mean(sapply(str_gene_lst, length, simplify = TRUE))
+```
+
+eSTRs table.
+
+> We used a gene-level FDR threshold (described previously14) of 10% to identify significant STR–gene pairs. We assume most genes have, at most, a single causal eSTR. For each gene, we determined the STR association with the strongest P value. This P value was adjusted using a Bonferroni correction for the number of STRs tested per gene, to give a P value for observing a single eSTR association for each gene. We then used the list of adjusted P values (one per gene) as input to the fdrcorrection function in the statsmodels.stats.multitest module to obtain a q-value for the best eSTR for each gene. [(Fotsing et al., 2019)](https://www.nature.com/articles/s41588-019-0521-9)
+
+```{r eSTR-neat}
+# get ONE str for each gene
+tmp.lst = lapply(fit_res, function(x){
+  x[1,]
+})
+
+df.eSTR = do.call(rbind, tmp.lst) %>%
+  mutate(final.p = p.adjust(q.value, method = "BH")) %>%
+  arrange(final.p)
+head(df.eSTR)
+```
+
+## Stat
+
+FDR 0.05
+
+```{r stat-fdr0.05, fig.width=5, fig.height=5}
+df.eSTR %>%
+  filter(final.p < 0.05) %>%
+  dim()
+```
+
+FDR 0.1
+
+```{r stat-fdr0.1, fig.width=5, fig.height=5}
+# total pairs
+df.eSTR %>%
+  filter(final.p < 0.1) %>%
+  dim()
+
+# genes
+df.eSTR %>%
+  filter(final.p < 0.1) %>%
+  pull(gene) %>%
+  unique() %>%
+  length()
+
+# STRs
+df.eSTR %>%
+  filter(final.p < 0.1) %>%
+  pull(site) %>%
+  unique() %>%
+  length()
+```
+
+## Plot
+
+### Q-Q plot
+
+```{r qqplot, fig.width=2.5, fig.height=2.5}
+df.fit_res.permuted = do.call(rbind, fit_res.permuted)
+df.fit_res = do.call(rbind, fit_res)
+
+# Observed data
+y = sort(-log10(df.fit_res$p.value))
+x = sort(-log10(runif(length(y))))
+
+# Control data
+yctrl = sort(-log10(df.fit_res.permuted$p.value))
+xctrl = sort(-log10(runif(length(yctrl))))
+
+# plot
+d4p = data.frame(y = y,
+                 x = x,
+                 yctrl = yctrl,
+                 xctrl = xctrl)
+p = d4p %>%
+  ggplot(aes(x=x, y=y)) +
+  geom_point_rast(color="red", size = .7, raster.dpi = 600, dev = "ragg") +
+  geom_point_rast(aes(x = xctrl, y = yctrl),
+                  color = "gray", size = .7, raster.dpi = 600, dev = "ragg") +
+  geom_abline(slope = 1, intercept = 0) +
+  labs(x = "Expected P value (-log10)",
+       y = "Observed P value (-log10)")
+p
+ggsave(p, filename = here::here("output", DOCNAME, "Fig.qqplot.pdf"),
+       height = 2.5, width = 2.5)
+saveRDS(p, file = here::here("output", DOCNAME, "Fig.qqplot.rds"))
+```
+
+### eSTR examples {.tabset}
+
+#### chr3:63912686
+
+SCA7
+
+> chr3	63912686	63912715	CAG	SCA7
+
+```{r fig.width=4, fig.height=4}
+s = "chr3:63912686"
+g = "ENSG00000285399.3"
+s_geno = na.omit(unlist(str_geno[s, ]))
+g_exp = rna_exp[, g]
+names(g_exp) = rownames(rna_exp)
+g_exp = g_exp[names(s_geno)]
+dat = data.frame(sample = names(g_exp), exp = g_exp, geno = factor(s_geno))
+
+dat %>%
+  ggplot(aes(x = geno, y = exp)) +
+  stat_boxplot(geom = "errorbar", width = 0.2) +
+  geom_boxplot(width = .4, outlier.colour = "black", outlier.size = .5) +
+  stat_summary(fun=mean, geom="line", aes(group=1), colour="red", size=1) + 
+  stat_summary(fun=mean, geom="point", colour="red", size=1.5, shape = 15) +
+  geom_jitter_rast(position=position_jitter(0.2), size = .5,
+              dev = "ragg", raster.dpi = 600) +
+  stat_n_text() +
+  labs(x = "STR dosage", y = "Normalized expression",
+       title = paste(g, s, sep = " - "))
+```
+
+#### chr10:45384834 - ALOX5
+
+```{r fig.width=4, fig.height=4}
+s = "chr10:45384834"
+g = "ENSG00000012779.11"
+s_geno = na.omit(unlist(str_geno[s, ]))
+g_exp = rna_exp[, g]
+names(g_exp) = rownames(rna_exp)
+g_exp = g_exp[names(s_geno)]
+dat = data.frame(sample = names(g_exp), exp = g_exp, geno = factor(s_geno))
+
+dat %>%
+  ggplot(aes(x = geno, y = exp)) +
+  stat_boxplot(geom = "errorbar", width = 0.2) +
+  geom_boxplot(width = .4, outlier.colour = "black", outlier.size = .5) +
+  stat_summary(fun=mean, geom="line", aes(group=1), colour="red", size=1) + 
+  stat_summary(fun=mean, geom="point", colour="red", size=1.5, shape = 15) +
+  geom_jitter_rast(position=position_jitter(0.2), size = .5,
+              dev = "ragg", raster.dpi = 600) +
+  stat_n_text() +
+  labs(x = "STR dosage", y = "Normalized expression",
+       title = paste(g, s, sep = " - "))
+```
+
+#### chr7:100359506
+
+```{r fig.width=4, fig.height=4}
+s = "chr7:100359506"
+g = "ENSG00000121716.20"
+s_geno = na.omit(unlist(str_geno[s, ]))
+g_exp = rna_exp[, g]
+names(g_exp) = rownames(rna_exp)
+g_exp = g_exp[names(s_geno)]
+dat = data.frame(sample = names(g_exp), exp = g_exp, geno = factor(s_geno))
+
+dat %>%
+  ggplot(aes(x = geno, y = exp)) +
+  stat_boxplot(geom = "errorbar", width = 0.2) +
+  geom_boxplot(width = .4, outlier.colour = "black", outlier.size = .5) +
+  stat_summary(fun=mean, geom="line", aes(group=1), colour="red", size=1) + 
+  stat_summary(fun=mean, geom="point", colour="red", size=1.5, shape = 15) +
+  geom_jitter_rast(position=position_jitter(0.2), size = .5,
+              dev = "ragg", raster.dpi = 600) +
+  stat_n_text() +
+  labs(x = "STR dosage", y = "Normalized expression",
+       title = paste(g, s, sep = " - "))
+```
+
+#### chr5:96936392
+
+```{r fig.width=4, fig.height=4}
+s = "chr5:96936392"
+g = "ENSG00000164308.17"
+s_geno = na.omit(unlist(str_geno[s, ]))
+g_exp = rna_exp[, g]
+names(g_exp) = rownames(rna_exp)
+g_exp = g_exp[names(s_geno)]
+dat = data.frame(sample = names(g_exp), exp = g_exp, geno = factor(s_geno))
+
+dat %>%
+  ggplot(aes(x = geno, y = exp)) +
+  stat_boxplot(geom = "errorbar", width = 0.2) +
+  geom_boxplot(width = .4, outlier.colour = "black", outlier.size = .5) +
+  stat_summary(fun=mean, geom="line", aes(group=1), colour="red", size=1) + 
+  stat_summary(fun=mean, geom="point", colour="red", size=1.5, shape = 15) +
+  geom_jitter_rast(position=position_jitter(0.2), size = .5,
+              dev = "ragg", raster.dpi = 600) +
+  stat_n_text() +
+  labs(x = "STR dosage", y = "Normalized expression",
+       title = paste(g, s, sep = " - "))
+```
+
+#### chr16:56472926
+
+```{r fig.width=4, fig.height=4}
+s = "chr16:56472926"
+g = "ENSG00000125124.12"
+s_geno = na.omit(unlist(str_geno[s, ]))
+g_exp = rna_exp[, g]
+names(g_exp) = rownames(rna_exp)
+g_exp = g_exp[names(s_geno)]
+dat = data.frame(sample = names(g_exp), exp = g_exp, geno = factor(s_geno))
+
+dat %>%
+  ggplot(aes(x = geno, y = exp)) +
+  stat_boxplot(geom = "errorbar", width = 0.2) +
+  geom_boxplot(width = .4, outlier.colour = "black", outlier.size = .5) +
+  stat_summary(fun=mean, geom="line", aes(group=1), colour="red", size=1) + 
+  stat_summary(fun=mean, geom="point", colour="red", size=1.5, shape = 15) +
+  geom_jitter_rast(position=position_jitter(0.2), size = .5,
+              dev = "ragg", raster.dpi = 600) +
+  stat_n_text() +
+  labs(x = "STR dosage", y = "Normalized expression",
+       title = paste(g, s, sep = " - "))
+```
+
+#### chr11:43772024
+
+```{r fig.width=4, fig.height=4}
+s = "chr11:43772024"
+g = "ENSG00000149084.13"
+s_geno = na.omit(unlist(str_geno[s, ]))
+g_exp = rna_exp[, g]
+names(g_exp) = rownames(rna_exp)
+g_exp = g_exp[names(s_geno)]
+dat = data.frame(sample = names(g_exp), exp = g_exp, geno = factor(s_geno))
+
+dat %>%
+  ggplot(aes(x = geno, y = exp)) +
+  stat_boxplot(geom = "errorbar", width = 0.2) +
+  geom_boxplot(width = .4, outlier.colour = "black", outlier.size = .5) +
+  stat_summary(fun=mean, geom="line", aes(group=1), colour="red", size=1) + 
+  stat_summary(fun=mean, geom="point", colour="red", size=1.5, shape = 15) +
+  geom_jitter_rast(position=position_jitter(0.2), size = .5,
+              dev = "ragg", raster.dpi = 600) +
+  stat_n_text() +
+  labs(x = "STR dosage", y = "Normalized expression",
+       title = paste(g, s, sep = " - "))
+```
+
+## Save
+
+```{r save, cache=FALSE, eval=FALSE}
+saveRDS(df.eSTR, file = here::here("output", DOCNAME, "df.eSTR.rds"))
+write_csv(df.eSTR, file = here::here("output", DOCNAME, "df.eSTR.csv"))
+```
+

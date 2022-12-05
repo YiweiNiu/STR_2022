@@ -1,0 +1,54 @@
+#!/bin/bash
+#PBS -V
+#PBS -j eo
+#PBS -N chr21
+#PBS -q Fat
+#PBS -l nodes=1:ppn=4
+#PBS -d /home2/niuyw/project/STR/diff_var/logs
+
+# WORK DIR
+WORKDIR=/home2/niuyw/project/STR/diff_var
+
+# chrom
+echo $chrom
+
+# pop1
+echo $pop1
+echo $pop2
+
+# PPN
+PPN=4
+
+# genome and annotations
+ANNODIR=/home2/niuyw/RefData
+GRCh38_REFERENCE=$ANNODIR/Homo_sapiens/GRCh38_no_alt/genome.fa
+GRCh38_GTF=$ANNODIR/Homo_sapiens/GENCODE_v39/gencode.v39.annotation.gtf
+GRCh38_bowtie2=$ANNODIR/Homo_sapiens/GRCh38_no_alt/Bowtie2Index/GRCh38_no_alt
+GRCh38_STAR=$ANNODIR/Homo_sapiens/GRCh38_no_alt/STARgenomes
+
+# tools dir
+TOOLDIR=/home2/niuyw/software
+path2java=$TOOLDIR/jdk1.8.0_311/bin/java
+path2bedtools=$TOOLDIR/bedtools2/bin/bedtools
+path2samtools=$TOOLDIR/samtools.1.9/bin/samtools
+path2bcftools=$TOOLDIR/bcftools-1.14/bcftools
+export BCFTOOLS_PLUGINS=$TOOLDIR/bcftools-1.14/plugins
+path2picard=$TOOLDIR/picard-2.9.2/picard.jar
+
+echo Start time is `date +%Y/%m/%d--%H:%M`
+
+# input
+input=/home2/niuyw/project/STR/02_FilteredRaw220120/${chrom}.vcf.gz
+
+# pop
+pop1_lst=/home2/niuyw/project/STR/samples/lst.${pop1}
+pop2_lst=/home2/niuyw/project/STR/samples/lst.${pop2}
+
+# out
+output=$WORKDIR/${pop1}vs${pop2}
+
+# sd diff
+python $WORKDIR/get_diff_sd.py -t $PPN -a $pop1_lst -b $pop2_lst -v $input -o $output/${chrom}.sd_diff.txt
+
+echo Finish time is `date +%Y/%m/%d--%H:%M`
+

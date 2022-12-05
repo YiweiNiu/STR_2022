@@ -1,0 +1,512 @@
+---
+title: "PCA.EAS.str_length"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "PCA.EAS.str_length"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+- First, run `PCA.EAS.str_length.R`
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 12, # axis.title
+  rel_small = 10 / 12, # axis.text
+  rel_tiny = 9 / 12,
+  rel_large = 12 / 12
+))
+
+# heatmap
+library(pheatmap)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+Load sample info
+
+```{r load-sam-info, cache=FALSE, message=FALSE, warning=FALSE}
+sam_info <- read_tsv(here::here("data", "220116_sample_info.GangSTR.txt")) %>%
+  dplyr::select(sample_old, dataset, super_pop, pop)
+```
+
+## Random 1 {.tabset}
+
+Load PCA results
+
+```{r load-pca-res, cache=FALSE, message=FALSE, warning=FALSE}
+pc_res <- readRDS(here::here("output", DOCNAME, "random1.pc_res_df.rds"))
+pc_var <- readRDS(here::here("output", DOCNAME, "random1.pc_var_df.rds"))
+head(pc_res)
+```
+
+Neat
+
+```{r}
+d4p <- pc_res %>%
+  left_join(sam_info, by = "sample_old")
+```
+
+Screen plot
+
+```{r screen-1, fig.width=6, fig.height=4}
+var_explained = pc_var %>%
+  filter(pcs < 11) %>%
+  mutate(Proportion = Proportion*100,
+         pcs = factor(pcs))
+var_explained
+
+var_explained %>%
+  ggplot(aes(x = pcs, y = Proportion, group = 1)) +
+  geom_col(fill = "#4682b4") +
+  geom_point_rast() +
+  geom_line() +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    y = "% of explained variances",
+    x = "Dimensions"
+  ) +
+  theme_cowplot()
+```
+
+### By dataset {.tabset}
+
+#### PC1 and PC2
+
+```{r, fig.height=6, fig.width=7}
+d4p %>%
+  ggplot(aes(x = pc1, y = pc2, color = dataset)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC1 (0.85%)", y = "PC2 (0.48%)")
+```
+
+#### PC1 and PC3
+
+```{r, fig.height=6, fig.width=7}
+d4p %>%
+  ggplot(aes(x = pc1, y = pc3, color = dataset)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC1 (0.85%)", y = "PC3 (0.43%)")
+```
+
+#### PC2 and PC3
+
+```{r, fig.height=6, fig.width=7}
+d4p %>%
+  ggplot(aes(x = pc2, y = pc3, color = dataset)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC2 (0.48%)", y = "PC3 (0.43%)")
+```
+
+#### PC3 and PC4
+
+```{r, fig.height=6, fig.width=7}
+d4p %>%
+  ggplot(aes(x = pc3, y = pc4, color = dataset)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC3 (0.43%)", y = "PC4 (0.32%)")
+```
+
+### By pop {.tabset}
+
+#### PC1 and PC2
+
+```{r, fig.height=6, fig.width=6}
+p1.PC1PC2 = d4p %>%
+  ggplot(aes(x = pc1, y = pc2, color = pop)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC1 (0.85%)", y = "PC2 (0.48%)", color=NULL) +
+  guides(color=guide_legend(nrow=2, byrow=TRUE)) +
+  theme(legend.position = "bottom")
+p1.PC1PC2
+```
+
+#### PC1 and PC3
+
+```{r, fig.height=6, fig.width=6}
+p1.PC1PC3 = d4p %>%
+  ggplot(aes(x = pc1, y = pc3, color = pop)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC1 (0.85%)", y = "PC3 (0.43%)", color=NULL) +
+  guides(color=guide_legend(nrow=2, byrow=TRUE)) +
+  theme(legend.position = "bottom")
+p1.PC1PC3
+```
+
+#### PC2 and PC3
+
+```{r, fig.height=6, fig.width=8}
+d4p %>%
+  ggplot(aes(x = pc2, y = pc3, color = pop)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC2 (0.48%)", y = "PC3 (0.43%)")
+```
+
+#### PC3 and PC4
+
+```{r, fig.height=6, fig.width=8}
+d4p %>%
+  ggplot(aes(x = pc3, y = pc4, color = pop)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC3 (0.43%)", y = "PC4 (0.32%)")
+```
+
+## Random 2 {.tabset}
+
+Load PCA results
+
+```{r load-pca-res-2, cache=FALSE, message=FALSE, warning=FALSE}
+pc_res <- readRDS(here::here("output", DOCNAME, "random2.pc_res_df.rds"))
+pc_var <- readRDS(here::here("output", DOCNAME, "random2.pc_var_df.rds"))
+head(pc_res)
+```
+
+Neat
+
+```{r}
+d4p <- pc_res %>%
+  left_join(sam_info, by = "sample_old")
+```
+
+Screen plot
+
+```{r screen-2, fig.width=6, fig.height=4}
+var_explained = pc_var %>%
+  filter(pcs < 11) %>%
+  mutate(Proportion = Proportion*100,
+         pcs = factor(pcs))
+var_explained
+
+var_explained %>%
+  ggplot(aes(x = pcs, y = Proportion, group = 1)) +
+  geom_col(fill = "#4682b4") +
+  geom_point_rast() +
+  geom_line() +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    y = "% of explained variances",
+    x = "Dimensions"
+  ) +
+  theme_cowplot()
+```
+
+### By dataset
+
+#### PC1 and PC2 {.tabset}
+
+```{r, fig.height=6, fig.width=7}
+d4p %>%
+  ggplot(aes(x = pc1, y = pc2, color = dataset)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC1 (0.85%)", y = "PC2 (0.48%)")
+```
+
+#### PC1 and PC3
+
+```{r, fig.height=6, fig.width=7}
+d4p %>%
+  ggplot(aes(x = pc1, y = pc3, color = dataset)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC1 (0.85%)", y = "PC3 (0.43%)")
+```
+
+#### PC2 and PC3
+
+```{r, fig.height=6, fig.width=7}
+d4p %>%
+  ggplot(aes(x = pc2, y = pc3, color = dataset)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC2 (0.48%)", y = "PC3 (0.43%)")
+```
+
+#### PC3 and PC4
+
+```{r, fig.height=6, fig.width=7}
+d4p %>%
+  ggplot(aes(x = pc3, y = pc4, color = dataset)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC3 (0.43%)", y = "PC4 (0.31%)")
+```
+
+### By pop {.tabset}
+
+#### PC1 and PC2
+
+```{r, fig.height=6, fig.width=6}
+p2.PC1PC2 = d4p %>%
+  ggplot(aes(x = pc1, y = pc2, color = pop)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC1 (0.85%)", y = "PC2 (0.48%)", color=NULL) +
+  guides(color=guide_legend(nrow=2, byrow=TRUE)) +
+  theme(legend.position = "bottom")
+p2.PC1PC2
+```
+
+#### PC1 and PC3
+
+```{r, fig.height=6, fig.width=6}
+p2.PC1PC3 = d4p %>%
+  ggplot(aes(x = pc1, y = pc3, color = pop)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC1 (0.85%)", y = "PC3 (0.43%)", color=NULL) +
+  guides(color=guide_legend(nrow=2, byrow=TRUE)) +
+  theme(legend.position = "bottom")
+p2.PC1PC3
+```
+
+#### PC2 and PC3
+
+```{r, fig.height=6, fig.width=8}
+d4p %>%
+  ggplot(aes(x = pc2, y = pc3, color = pop)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC2 (0.48%)", y = "PC3 (0.43%)")
+```
+
+#### PC3 and PC4
+
+```{r, fig.height=6, fig.width=8}
+d4p %>%
+  ggplot(aes(x = pc3, y = pc4, color = pop)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC3 (0.43%)", y = "PC4 (0.31%)")
+```
+
+## Random 3 {.tabset}
+
+Load PCA results
+
+```{r load-pca-res-3, cache=FALSE, message=FALSE, warning=FALSE}
+pc_res <- readRDS(here::here("output", DOCNAME, "random3.pc_res_df.rds"))
+pc_var <- readRDS(here::here("output", DOCNAME, "random3.pc_var_df.rds"))
+head(pc_res)
+```
+
+Neat
+
+```{r}
+d4p <- pc_res %>%
+  left_join(sam_info, by = "sample_old")
+```
+
+Screen plot
+
+```{r screen-3, fig.width=6, fig.height=4}
+var_explained = pc_var %>%
+  filter(pcs < 11) %>%
+  mutate(Proportion = Proportion*100,
+         pcs = factor(pcs))
+var_explained
+
+var_explained %>%
+  ggplot(aes(x = pcs, y = Proportion, group = 1)) +
+  geom_col(fill = "#4682b4") +
+  geom_point_rast() +
+  geom_line() +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    y = "% of explained variances",
+    x = "Dimensions"
+  ) +
+  theme_cowplot()
+```
+
+### By dataset {.tabset}
+
+#### PC1 and PC2
+
+```{r, fig.height=6, fig.width=7}
+d4p %>%
+  ggplot(aes(x = pc1, y = pc2, color = dataset)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC1 (0.85%)", y = "PC2 (0.47%)")
+```
+
+#### PC1 and PC3
+
+```{r, fig.height=6, fig.width=7}
+d4p %>%
+  ggplot(aes(x = pc1, y = pc3, color = dataset)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC1 (0.85%)", y = "PC3 (0.43%)")
+```
+
+#### PC2 and PC3
+
+```{r, fig.height=6, fig.width=7}
+d4p %>%
+  ggplot(aes(x = pc2, y = pc3, color = dataset)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC2 (0.47%)", y = "PC3 (0.43%)")
+```
+
+#### PC3 and PC4
+
+```{r, fig.height=6, fig.width=7}
+d4p %>%
+  ggplot(aes(x = pc3, y = pc4, color = dataset)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC3 (0.43%)", y = "PC4 (0.31%)")
+```
+
+### By pop {.tabset}
+
+#### PC1 and PC2
+
+```{r, fig.height=6, fig.width=6}
+p3.PC1PC2 = d4p %>%
+  ggplot(aes(x = pc1, y = pc2, color = pop)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC1 (0.85%)", y = "PC2 (0.47%)", color=NULL) +
+  guides(color=guide_legend(nrow=2, byrow=TRUE)) +
+  theme(legend.position = "bottom")
+p3.PC1PC2
+```
+
+#### PC1 and PC3
+
+```{r, fig.height=6, fig.width=6}
+p3.PC1PC3 = d4p %>%
+  ggplot(aes(x = pc1, y = pc3, color = pop)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC1 (0.85%)", y = "PC3 (0.43%)", color=NULL) +
+  guides(color=guide_legend(nrow=2, byrow=TRUE)) +
+  theme(legend.position = "bottom")
+p3.PC1PC3
+```
+
+#### PC2 and PC3
+
+```{r, fig.height=6, fig.width=8}
+d4p %>%
+  ggplot(aes(x = pc2, y = pc3, color = pop)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC2 (0.47%)", y = "PC3 (0.43%)")
+```
+
+#### PC3 and PC4
+
+```{r, fig.height=6, fig.width=8}
+d4p %>%
+  ggplot(aes(x = pc3, y = pc4, color = pop)) +
+  geom_point_rast() +
+  scale_color_manual(values = pop_color_maps) +
+  labs(x = "PC3 (0.43%)", y = "PC4 (0.31%)")
+```
+
+## Figures
+
+Random1
+
+```{r fig.width=7.5, fig.height=4.5}
+p.PCA.EAS.random1 = p1.PC1PC2 + p1.PC1PC3 +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+p.PCA.EAS.random1
+```
+
+Random2
+
+```{r fig.width=7.5, fig.height=4.5}
+p.PCA.EAS.random2 = p2.PC1PC2 + p2.PC1PC3 +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+p.PCA.EAS.random2
+```
+
+Random3
+
+```{r fig.width=7.5, fig.height=4.5}
+p.PCA.EAS.random3 = p3.PC1PC2 + p3.PC1PC3 +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+p.PCA.EAS.random3
+```
+
+## Save
+
+```{r save, cache=FALSE}
+saveRDS(p.PCA.EAS.random1, file = here::here("output", DOCNAME, "Fig.PCA.EAS.random1.rds"))
+saveRDS(p.PCA.EAS.random2, file = here::here("output", DOCNAME, "Fig.PCA.EAS.random2.rds"))
+saveRDS(p.PCA.EAS.random3, file = here::here("output", DOCNAME, "Fig.PCA.EAS.random3.rds"))
+```
+
+## Session info
+
+

@@ -1,0 +1,277 @@
+---
+title: "FC.1KGP_EAS.pops.het01"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "FC.1KGP_EAS.pops.het01"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # axis.title
+  rel_small = 8 / 10, # axis.text
+  rel_tiny = 9 / 10,
+  rel_large = 10 / 10
+))
+geom.text.size <- 8 / (14 / 5)
+
+# heatmap
+library(pheatmap)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+Load rds (fast)
+
+```{r load-rds, cache=FALSE}
+dat_lst <- readRDS(here::here("output", DOCNAME, "FC.rds"))
+```
+
+## Load and neat
+
+Load STR info
+
+```{r message=FALSE, warning=FALSE, eval=FALSE}
+str_info <- read_tsv("/T02Data/niuyw/niuyw-usb-disk/Projects/STR/str_info/str_info.txt") %>%
+  filter(het > 0.1) %>%
+  mutate(csq2 = case_when(
+    csq == "upstream" ~ "Promoter",
+    csq == "nc_intron" ~ "Noncoding_intron",
+    csq == "intron" ~ "Coding_intron",
+    csq == "downstream" ~ "Downstream",
+    csq == "UTR3" ~ "3'UTR",
+    csq == "intergenic" ~ "Intergenic",
+    csq == "nc_exon" ~ "Noncoding_exon",
+    csq == "UTR5" ~ "5'UTR",
+    TRUE ~ csq
+  ))
+dim(str_info)
+```
+
+Load FC and p values.
+
+```{r load-dat, message=FALSE, warning=FALSE, eval=FALSE}
+data_dir <- "/niuyw-usb-disk/Projects/STR/fold_change"
+chroms <- paste0("chr", 1:22)
+
+# pops to cmp
+cmp_pops <- c(
+  "CHB.1KGPvsCHS.1KGP", "CDXvsCHS.1KGP", "KHVvsCHS.1KGP", "JPTvsCHS.1KGP",
+  "CHB.1KGPvsJPT", "CDXvsJPT", "KHVvsJPT",
+  "CHB.1KGPvsKHV", "CDXvsKHV",
+  "CHB.1KGPvsCDX"
+)
+
+# load
+dat_lst <- lapply(cmp_pops, function(x) {
+  tmp_lst <- lapply(chroms, function(y) {
+    read_tsv(file.path(data_dir, x, paste0(y, ".FC.txt"))) %>%
+      mutate(site = str_match(site, ".*?:.*?:")) %>%
+      mutate(site = str_remove(site, ":$")) %>%
+      filter(site %in% str_info$site)
+  })
+  df <- do.call(rbind, tmp_lst)
+  # get q-value
+  df <- df %>%
+    mutate(q = p.adjust(ranksums.p, method = "BH")) %>%
+    left_join(str_info, by = "site") %>%
+    arrange(q, -abs(LFC))
+  df
+})
+names(dat_lst) <- cmp_pops
+```
+
+## Stats
+
+0.01
+
+```{r}
+lapply(dat_lst, FUN = function(x) {
+  x %>%
+    filter(q < 0.01) %>%
+    mutate(change = case_when(
+      LFC > 0 ~ "Up",
+      TRUE ~ "Dn"
+    )) %>%
+    pull(change) %>%
+    table()
+})
+```
+
+0.05
+
+```{r}
+lapply(dat_lst, FUN = function(x) {
+  x %>%
+    filter(q < 0.05) %>%
+    mutate(change = case_when(
+      LFC > 0 ~ "Up",
+      TRUE ~ "Dn"
+    )) %>%
+    pull(change) %>%
+    table()
+})
+```
+
+## Show {.tabset}
+
+Top 100
+
+```{r show-top100, results = "hide"}
+# pops to cmp
+cmp_pops <- names(dat_lst)
+src_list <- lapply(cmp_pops, function(s) {
+  src <- c(
+    "### {{s}} {.unnumbered}",
+    "```{r show-top100-{{s}}}",
+    "df = dat_lst[['{{s}}']]",
+    "df_q005 = df %>% dplyr::filter(q < .05)",
+    "dim(df_q005)",
+    "DT::datatable(head(df_q005, 100), filter = 'top')",
+    "```",
+    ""
+  )
+  # print(src)
+  knitr::knit_expand(text = src)
+})
+
+out <- knitr::knit_child(text = unlist(src_list), options = list(cache = FALSE))
+```
+
+`r out`
+
+## Plot
+
+Plot
+
+```{r fig.width=8, fig.height=8}
+# pops to cmp
+cmp_pops <- names(dat_lst)
+
+plot_volcano <- function(dat = NULL) {
+  dat %>%
+    ggplot(aes(x = LFC, y = -log10(q))) +
+    geom_point_rast(size = 0.1, raster.dpi = 300, color = "grey50") +
+    geom_hline(
+      yintercept = -log10(0.01),
+      linetype = "dashed",
+      color = "gray"
+    ) +
+    xlim(-1, 1) +
+    labs(
+      x = expression(Log[2] ~ fold ~ change),
+      y = expression(-Log[10] ~ p - value)
+    )
+}
+
+# plot
+p_lst <- lapply(cmp_pops, function(x) {
+  # print(x)
+  p <- plot_volcano(dat_lst[[x]])
+  p
+})
+# p_lst[[1]]
+
+# layout
+layout <- c(
+  area(t = 1, l = 1),
+  area(t = 1, l = 2),
+  area(t = 1, l = 3),
+  area(t = 1, l = 4),
+  area(t = 2, l = 1),
+  area(t = 2, l = 2),
+  area(t = 2, l = 3),
+  area(t = 3, l = 1),
+  area(t = 3, l = 2),
+  area(t = 4, l = 1)
+)
+# plot(layout)
+
+p <- wrap_plots(p_lst) +
+  plot_layout(design = layout)
+p
+
+ggsave2(p,
+  filename = here::here("output", DOCNAME, "Fig.FC_1KGP_EAS_pops.pdf"),
+  height = 8, width = 8
+)
+saveRDS(p, file = here::here("output", DOCNAME, "Fig.FC_1KGP_EAS_pops.rds"))
+```
+
+## Output
+
+```{r write-tsv, eval=FALSE}
+xxx <- lapply(cmp_pops, function(x) {
+  dat_lst[[x]] %>%
+    write_tsv(file = here::here("output", DOCNAME, paste0(x, ".FC.tsv")))
+})
+
+xxx <- lapply(cmp_pops, function(x) {
+  dat_lst[[x]] %>%
+    filter(q < 0.05) %>%
+    write_tsv(file = here::here("output", DOCNAME, paste0(x, ".FC_q005.tsv")))
+})
+```
+
+## Save
+
+```{r save, cache=FALSE, eval=FALSE}
+saveRDS(dat_lst, file = here::here("output", DOCNAME, "FC.rds"))
+```
+
+## Session info
+

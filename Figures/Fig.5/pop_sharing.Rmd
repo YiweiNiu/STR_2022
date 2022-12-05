@@ -1,0 +1,242 @@
+---
+title: "pop_sharing"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME = "pop_sharing"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+    if (before) {
+        print(paste("Start:", Sys.time()))
+        NOW <<- Sys.time()
+    } else {
+        print(paste("Stop:", Sys.time()))
+        print(Sys.time() - NOW)
+    }
+})
+
+knitr::opts_chunk$set(
+    autodep        = TRUE,
+    cache.lazy     = FALSE, 
+    cache.comments = FALSE,
+    echo           = TRUE,
+    error          = FALSE,
+    fig.align      = "center",
+    fig.width      = 10,
+    fig.height     = 8,
+    message        = FALSE,
+    warning        = FALSE,
+    timeit         = TRUE
+)
+```
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+geom.text.size <- 7
+
+# heatmap
+library(pheatmap)
+
+# upset
+library(UpSetR)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+Load sample stat
+
+```{r load-sam-stat, message=FALSE, warning=FALSE}
+sam_stat = readRDS(here::here("output/sample_stat", "sam_stat.rds"))
+```
+
+Load site list of each super-pop
+
+```{r load-site-lst-each-sPop, message=FALSE, warning=FALSE, eval=FALSE}
+data_dir = '/niuyw-usb-disk/Projects/STR/str_stat'
+
+super_pops = c("AFR", "AMR", "EAS", "EUR", "SAS", "NyuWa")
+site_lst = lapply(super_pops, function(x){
+  d = read_tsv(file.path(data_dir, "sample_stat_byPop", paste0("site_lst.", x)), col_names = FALSE)
+  d$X1
+})
+names(site_lst) = super_pops
+
+saveRDS(site_lst, file = here::here("output", DOCNAME, "site_lst.rds"))
+```
+
+```{r load-site-lst-each-Pop-rds, message=FALSE, warning=FALSE}
+super_pops = c("AFR", "AMR", "EAS", "EUR", "SAS", "NyuWa")
+site_lst = readRDS(here::here("output", DOCNAME, "site_lst.rds"))
+```
+
+Load allele list of each super-pop
+
+```{r load-allele-lst-each-sPop, message=FALSE, warning=FALSE, eval=FALSE}
+data_dir = '/niuyw-usb-disk/Projects/STR/str_stat'
+
+super_pops = c("AFR", "AMR", "EAS", "EUR", "SAS", "NyuWa")
+allele_lst = lapply(super_pops, function(x){
+  d = read_tsv(file.path(data_dir, "sample_stat_byPop", paste0("allele_lst.", x)), col_names = FALSE)
+  d$X1
+})
+names(allele_lst) = super_pops
+
+saveRDS(allele_lst, file = here::here("output", DOCNAME, "allele_lst.rds"))
+```
+
+```{r load-allele-lst-each-Pop-rds, message=FALSE, warning=FALSE}
+super_pops = c("AFR", "AMR", "EAS", "EUR", "SAS", "NyuWa")
+allele_lst = readRDS(here::here("output", DOCNAME, "allele_lst.rds"))
+```
+
+Load sharing stats of each pop
+
+```{r load-site-lst-each-Pop, message=FALSE, warning=FALSE}
+data_dir = '/niuyw-usb-disk/Projects/STR/str_stat'
+
+stat_pop_sharing = read_csv(file.path(data_dir, "pop_sharing.csv"))
+```
+
+## Plot
+
+### UpsetR of super-pop
+
+site
+
+```{r upset-super-pop, fig.width=8, fig.height=3.5}
+upset(fromList(site_lst), nsets = 6, nintersects = 100,
+      show.numbers = FALSE,
+      scale.intersections = "log10",
+      scale.sets = "log10",
+      sets.bar.color = pop_color_maps[super_pops],
+      point.size = 1, line.size = 0.3,
+      mb.ratio = c(0.5, 0.5))
+
+pdf(here::here("output", DOCNAME, "Fig.pop_sharing.site.upset.pdf"), height =3.5, width = 8)
+upset(fromList(site_lst), nsets = 6, nintersects = 100,
+      show.numbers = FALSE,
+      scale.intersections = "log10",
+      scale.sets = "log10",
+      sets.bar.color = pop_color_maps[super_pops],
+      point.size = 1, line.size = 0.3,
+      mb.ratio = c(0.5, 0.5))
+dev.off()
+```
+
+allele
+
+```{r upset-super-pop-allele, fig.width=8, fig.height=3.5}
+upset(fromList(allele_lst), nsets = 6, nintersects = 100,
+      show.numbers = FALSE,
+      scale.intersections = "log10",
+      scale.sets = "log10",
+      sets.bar.color = pop_color_maps[super_pops],
+      point.size = 1, line.size = 0.3,
+      mb.ratio = c(0.5, 0.5))
+
+pdf(here::here("output", DOCNAME, "Fig.pop_sharing.allele.upset.pdf"), height =3.5, width = 8)
+upset(fromList(allele_lst), nsets = 6, nintersects = 100,
+      show.numbers = FALSE,
+      scale.intersections = "log10",
+      scale.sets = "log10",
+      sets.bar.color = pop_color_maps[super_pops],
+      point.size = 1, line.size = 0.3,
+      mb.ratio = c(0.5, 0.5))
+dev.off()
+```
+
+### Sharing of each pop
+
+Percentage of sharing
+
+```{r pop-sharing, fig.width=7, fig.height=4}
+# order by median
+tmp_df = sam_stat %>%
+  filter(pop != "NA") %>%
+  group_by(super_pop) %>%
+  mutate(m1 = median(tot)) %>%
+  group_by(pop) %>%
+  mutate(m2 = median(tot)) %>%
+  mutate(m2  = case_when(
+    pop == "IBS" ~ 32775+1, # since IBS/TSI have the same median value
+    TRUE ~ m2
+  )) %>%
+  arrange(-m1, -m2, -tot) %>%
+  dplyr::select(-m1, -m2)
+
+# for plot
+d4p = stat_pop_sharing %>%
+  pivot_longer(cols = c("Unique", "Shared", "All")) %>%
+  mutate(pop = factor(pop, levels = unique(tmp_df$pop)),
+         name = factor(name, levels = c("Unique", "Shared", "All"))) %>%
+  mutate(prop = value/tot*100)
+DT::datatable(d4p, filter = "top")
+
+# Percentage of sharing
+p1 = d4p %>%
+  ggplot(aes(x = pop, y = prop, fill = name)) +
+  geom_col(color = "white") +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_npg() +
+  labs(x = NULL, y= "% of pSTRs", fill = "Sharing") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+# Number of unique sites
+p2 = d4p %>%
+  filter(name == "Unique") %>%
+  ggplot(aes(x = pop, y = value, group = 1)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(label = label_comma()) +
+  labs(x = NULL, y = "# of unique") +
+  theme(axis.text.x = element_blank())
+
+# align
+p.pop_sharing = p2 + p1 +
+  plot_layout(ncol = 1, heights = c(1, 2.5))
+
+# save
+ggsave(p.pop_sharing, filename = here::here("output", DOCNAME, "Fig.pop_sharing.pdf"),
+       height = 4, width = 6)
+p.pop_sharing
+saveRDS(p.pop_sharing, file = here::here("output", DOCNAME, "Fig.pop_sharing.rds"))
+```
+
+
+## Session info
+

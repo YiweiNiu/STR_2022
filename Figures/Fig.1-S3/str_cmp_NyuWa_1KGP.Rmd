@@ -1,0 +1,538 @@
+---
+title: "str_cmp_NyuWa_1KGP"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME = "str_cmp_NyuWa_1KGP"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+    if (before) {
+        print(paste("Start:", Sys.time()))
+        NOW <<- Sys.time()
+    } else {
+        print(paste("Stop:", Sys.time()))
+        print(Sys.time() - NOW)
+    }
+})
+
+knitr::opts_chunk$set(
+    autodep        = TRUE,
+    cache          = FALSE,
+    cache.lazy     = FALSE, 
+    cache.comments = FALSE,
+    echo           = TRUE,
+    error          = FALSE,
+    fig.align      = "center",
+    fig.width      = 10,
+    fig.height     = 8,
+    message        = FALSE,
+    warning        = FALSE,
+    timeit         = TRUE
+)
+```
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+library(venneuler)
+
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+geom.text.size <- 7
+
+# heatmap
+library(pheatmap)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+
+## 2, 3, 4, 5, 6
+cPalette <- c("#999999", "#7DA1D4", "#BEDE85", "#DCB070", "#EAAAB0")
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+## Load data
+
+Load site stat each super-pop
+
+```{r load-site-stat-eachPop, message=FALSE, warning=FALSE}
+data_dir = '/niuyw-usb-disk/Projects/STR/str_stat'
+
+sample_stat_byPop = read_csv(file.path(data_dir, "sample_stat_byPop.csv"))
+```
+
+Load sample stat
+
+```{r load-sam-stat, message=FALSE, warning=FALSE}
+sam_stat = readRDS(here::here("output/sample_stat", "sam_stat.rds"))
+```
+
+Load site/allele list of each super-pop
+
+```{r load-site-allele-lst-each-sPop, message=FALSE, warning=FALSE}
+site_lst = readRDS(here::here("output/pop_sharing", "site_lst.rds"))
+lengths(site_lst)
+allele_lst = readRDS(here::here("output/pop_sharing", "allele_lst.rds"))
+lengths(allele_lst)
+```
+
+## pSTR stat of each dataset
+
+Dataset
+
+```{r , message=FALSE, warning=FALSE}
+DT::datatable(sample_stat_byPop)
+```
+
+Plot
+
+```{r site-stat-each-dataset, fig.width=3, fig.height=2.5}
+super_pops = c("AFR", "AMR", "EAS", "EUR", "SAS", "NyuWa")
+
+p.spopStat = sample_stat_byPop %>%
+  filter(dataset %in% c("Merged", "1KGP", "NyuWa", super_pops)) %>%
+  dplyr::select(dataset,
+                `Di-` = period_2, `Tri-` = period_3, `Tet-` = period_4,
+                `Pen-` = period_5, `Hex-` = period_6) %>%
+  pivot_longer(cols = c("Di-", "Tri-", "Tet-", "Pen-", "Hex-")) %>%
+  mutate(name = factor(name, levels = rev(c("Di-", "Tri-", "Tet-", "Pen-", "Hex-")))) %>%
+  ggplot(aes(x = reorder(dataset, value, sum), y = value, fill = name)) +
+  geom_col() +
+  scale_y_continuous(expand = c(0, 0),
+                     labels = label_comma()) +
+  scale_fill_manual(values = period_color_map) +
+  labs(x = NULL, y = "# of pSTRs", fill = NULL) +
+  coord_flip() +
+  theme(legend.position = c(0.75, 0.25))
+p.spopStat
+
+ggsave(p.spopStat, filename = here::here("output", DOCNAME, "Fig.spopStat.pdf"),
+       height = 2.5, width = 3)
+saveRDS(p.spopStat, file = here::here("output", DOCNAME, "Fig.spopStat.rds"))
+```
+
+Each pop
+
+```{r site-stat-each-pop, fig.width=7, fig.height=3}
+# order bymedian
+tmp_df = sam_stat %>%
+  filter(pop != "NA") %>%
+  group_by(super_pop) %>%
+  mutate(m1 = median(tot)) %>%
+  group_by(pop) %>%
+  mutate(m2 = median(tot)) %>%
+  mutate(m2  = case_when(
+    pop == "IBS" ~ 32775+1, # since IBS/TSI have the same median value
+    TRUE ~ m2
+  )) %>%
+  arrange(-m1, -m2, -tot) %>%
+  dplyr::select(-m1, -m2)
+
+p.popStat = sample_stat_byPop %>%
+  filter(!(dataset %in% c("Merged", "1KGP", "NyuWa", super_pops))) %>%
+  mutate(dataset = factor(dataset, levels = unique(tmp_df$pop))) %>%
+  dplyr::select(dataset,
+                `Di-` = period_2, `Tri-` = period_3, `Tet-` = period_4,
+                `Pen-` = period_5, `Hex-` = period_6) %>%
+  pivot_longer(cols = c("Di-", "Tri-", "Tet-", "Pen-", "Hex-")) %>%
+  mutate(name = factor(name, levels = rev(c("Di-", "Tri-", "Tet-", "Pen-", "Hex-")))) %>%
+  ggplot(aes(x = dataset, y = value, fill = name)) +
+  geom_col() +
+  scale_y_continuous(expand = c(0, 0),
+                     labels = label_comma()) +
+  scale_fill_manual(values = period_color_map) +
+  labs(y = NULL, x = "# of pSTRs", fill = NULL)+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p.popStat
+
+ggsave(p.popStat, filename = here::here("output", DOCNAME, "Fig.popStat.pdf"),
+       height = 2.5, width = 4)
+saveRDS(p.popStat, file = here::here("output", DOCNAME, "Fig.popStat.rds"))
+```
+
+## NyuWa and 1KGP
+
+### Site venn
+
+```{r fig.width=4, fig.height=4}
+num = list(A = 59411, B = 89719, AB = 216883)
+v = venneuler(c(A = num$A, B = num$B, "A&B" = num$AB))
+v$labels <- c("","","")
+plot(v)
+text(v$centers[1, 1] + 0.2, v$centers[1, 2], prettyNum(num$A, big.mark = ","), cex = 1) #A
+text(v$centers[2, 1] - 0.2, v$centers[2, 2], prettyNum(num$B, big.mark = ","), cex = 1) #B
+text(0.5, 0.5, prettyNum(num$AB, big.mark = ","), cex = 1) #AB
+text(v$centers[1, 1] + 0.3, v$centers[1, 2] + 0.3, "1KGP", cex = 1)
+text(v$centers[2, 1] - 0.3, v$centers[2, 2] + 0.3, "NyuWa", cex = 1)
+
+pdf(here::here("output", DOCNAME, "Fig.cmp_NyuWa_1KGP.site.pdf"), height = 4, width = 4)
+num = list(A = 59411, B = 89719, AB = 216883)
+v = venneuler(c(A = num$A, B = num$B, "A&B" = num$AB))
+v$labels <- c("","","")
+plot(v)
+text(v$centers[1, 1] + 0.2, v$centers[1, 2], prettyNum(num$A, big.mark = ","), cex = 1) #A
+text(v$centers[2, 1] - 0.2, v$centers[2, 2], prettyNum(num$B, big.mark = ","), cex = 1) #B
+text(0.5, 0.5, prettyNum(num$AB, big.mark = ","), cex = 1) #AB
+text(v$centers[1, 1] + 0.3, v$centers[1, 2] + 0.3, "1KGP", cex = 1)
+text(v$centers[2, 1] - 0.3, v$centers[2, 2] + 0.3, "NyuWa", cex = 1)
+dev.off()
+```
+
+### Allele venn
+
+```{r fig.width=4, fig.height=4}
+num = list(A = 262273, B = 523063, AB = 774479)
+v = venneuler(c(A = num$A, B = num$B, "A&B" = num$AB))
+v$labels <- c("","","")
+plot(v)
+text(v$centers[1, 1] + 0.2, v$centers[1, 2], prettyNum(num$A, big.mark = ","), cex = 1) #A
+text(v$centers[2, 1] - 0.2, v$centers[2, 2], prettyNum(num$B, big.mark = ","), cex = 1) #B
+text(0.5, 0.5, prettyNum(num$AB, big.mark = ","), cex = 1) #AB
+text(v$centers[1, 1] + 0.3, v$centers[1, 2] + 0.3, "1KGP", cex = 1)
+text(v$centers[2, 1] - 0.3, v$centers[2, 2] + 0.3, "NyuWa", cex = 1)
+
+pdf(here::here("output", DOCNAME, "Fig.cmp_NyuWa_1KGP.allele.pdf"), height = 4, width = 4)
+num = list(A = 262273, B = 523063, AB = 774479)
+v = venneuler(c(A = num$A, B = num$B, "A&B" = num$AB))
+v$labels <- c("","","")
+plot(v)
+text(v$centers[1, 1] + 0.2, v$centers[1, 2], prettyNum(num$A, big.mark = ","), cex = 1) #A
+text(v$centers[2, 1] - 0.2, v$centers[2, 2], prettyNum(num$B, big.mark = ","), cex = 1) #B
+text(0.5, 0.5, prettyNum(num$AB, big.mark = ","), cex = 1) #AB
+text(v$centers[1, 1] + 0.3, v$centers[1, 2] + 0.3, "1KGP", cex = 1)
+text(v$centers[2, 1] - 0.3, v$centers[2, 2] + 0.3, "NyuWa", cex = 1)
+dev.off()
+```
+
+## NyuWa and EAS
+
+Number
+
+```{r}
+length(intersect(site_lst$NyuWa, site_lst$EAS))
+length(intersect(allele_lst$NyuWa, allele_lst$EAS))
+```
+
+### Site venn
+
+```{r fig.width=4, fig.height=4}
+num = list(A = 9322, B = 175028, AB = 131574)
+v = venneuler(c(A = num$A, B = num$B, "A&B" = num$AB))
+v$labels <- c("","","")
+plot(v)
+text(v$centers[1, 1] + 0.2, v$centers[1, 2], prettyNum(num$A, big.mark = ","), cex = 1) #A
+text(v$centers[2, 1] - 0.2, v$centers[2, 2], prettyNum(num$B, big.mark = ","), cex = 1) #B
+text(0.5, 0.5, prettyNum(num$AB, big.mark = ","), cex = 1) #AB
+text(v$centers[1, 1] + 0.3, v$centers[1, 2] + 0.2, "EAS", cex = 1)
+text(v$centers[2, 1] - 0.3, v$centers[2, 2] + 0.3, "NyuWa", cex = 1)
+
+pdf(here::here("output", DOCNAME, "Fig.cmp_NyuWa_1KGP_EAS.site.pdf"), height = 4, width = 4)
+num = list(A = 9322, B = 175028, AB = 131574)
+v = venneuler(c(A = num$A, B = num$B, "A&B" = num$AB))
+v$labels <- c("","","")
+plot(v)
+text(v$centers[1, 1] + 0.2, v$centers[1, 2], prettyNum(num$A, big.mark = ","), cex = 1) #A
+text(v$centers[2, 1] - 0.2, v$centers[2, 2], prettyNum(num$B, big.mark = ","), cex = 1) #B
+text(0.5, 0.5, prettyNum(num$AB, big.mark = ","), cex = 1) #AB
+text(v$centers[1, 1] + 0.3, v$centers[1, 2] + 0.2, "1KGP EAS", cex = 1)
+text(v$centers[2, 1] - 0.3, v$centers[2, 2] + 0.3, "NyuWa", cex = 1)
+dev.off()
+```
+
+### Allele venn
+
+```{r fig.width=4, fig.height=4}
+num = list(A = 37977, B = 825162, AB = 472380)
+v = venneuler(c(A = num$A, B = num$B, "A&B" = num$AB))
+v$labels <- c("","","")
+plot(v)
+text(v$centers[1, 1] + 0.2, v$centers[1, 2], prettyNum(num$A, big.mark = ","), cex = 1) #A
+text(v$centers[2, 1] - 0.2, v$centers[2, 2], prettyNum(num$B, big.mark = ","), cex = 1) #B
+text(0.5, 0.5, prettyNum(num$AB, big.mark = ","), cex = 1) #AB
+text(v$centers[1, 1] + 0.3, v$centers[1, 2] + 0.3, "EAS", cex = 1)
+text(v$centers[2, 1] - 0.3, v$centers[2, 2] + 0.3, "NyuWa", cex = 1)
+
+pdf(here::here("output", DOCNAME, "Fig.cmp_NyuWa_1KGP_EAS.allele.pdf"), height = 4, width = 4)
+num = list(A = 37977, B = 825162, AB = 472380)
+v = venneuler(c(A = num$A, B = num$B, "A&B" = num$AB))
+v$labels <- c("","","")
+plot(v)
+text(v$centers[1, 1] + 0.2, v$centers[1, 2], prettyNum(num$A, big.mark = ","), cex = 1) #A
+text(v$centers[2, 1] - 0.2, v$centers[2, 2], prettyNum(num$B, big.mark = ","), cex = 1) #B
+text(0.5, 0.5, prettyNum(num$AB, big.mark = ","), cex = 1) #AB
+text(v$centers[1, 1] + 0.3, v$centers[1, 2] + 0.3, "EAS", cex = 1)
+text(v$centers[2, 1] - 0.3, v$centers[2, 2] + 0.3, "NyuWa", cex = 1)
+dev.off()
+```
+
+## AF comparison
+
+Load site list of each super-pop
+
+```{r load-site-lst-each-sPop, message=FALSE, warning=FALSE}
+data_dir = '/niuyw-usb-disk/Projects/STR/str_stat'
+
+super_pops = c("1KGP", "AFR", "AMR", "EAS", "EUR", "SAS", "NyuWa")
+site_lst = lapply(super_pops, function(x){
+  d = read_tsv(file.path(data_dir, "sample_stat_byPop", paste0("site_lst.", x)), col_names = FALSE)
+  d$X1
+})
+names(site_lst) = super_pops
+```
+
+Load STR MAF
+
+```{r load-str-maf, message=FALSE, warning=FALSE}
+str_maf = read_csv("/T02Data/niuyw/niuyw-usb-disk/Projects/STR/str_stat/str_maf.csv")
+```
+
+### NyuWa vs. 1KGP
+
+```{r , fig.height=3.5, fig.width=3.5}
+common_loci = intersect(site_lst$`1KGP`, site_lst$NyuWa)
+d4p = str_maf %>%
+  filter(site %in% common_loci)
+
+p.af_cmp.all = d4p %>%
+  ggplot(aes(x = maf_NyuWa, y = maf_1KGP)) +
+  geom_point_rast(alpha = .3, raster.dpi = 300, size = .5) + 
+  stat_cor(method = "pearson") +
+  labs(x = 'MAF (NyuWa)', y = 'MAF (1KGP)') +
+  geom_abline(slope = 1, intercept = 0, color = 'blue')
+p.af_cmp.all
+```
+
+### NyuWa vs. EAS
+
+```{r , fig.height=3.5, fig.width=3.5}
+common_loci = intersect(site_lst$EAS, site_lst$NyuWa)
+d4p = str_maf %>%
+  filter(site %in% common_loci)
+
+p.af_cmp.eas = d4p %>%
+  ggplot(aes(x = maf_NyuWa, y = maf_EAS)) +
+  geom_point_rast(alpha = .3, raster.dpi = 300, size = .5) + 
+  stat_cor(method = "pearson") +
+  labs(x = 'MAF (NyuWa)', y = 'MAF (1KGP EAS)') +
+  geom_abline(slope = 1, intercept = 0, color = 'blue')
+p.af_cmp.eas
+```
+
+### NyuWa vs. AFR
+
+```{r , fig.height=3.5, fig.width=3.5}
+common_loci = intersect(site_lst$AFR, site_lst$NyuWa)
+d4p = str_maf %>%
+  filter(site %in% common_loci)
+
+p.af_cmp.afr = d4p %>%
+  ggplot(aes(x = maf_NyuWa, y = maf_AFR)) +
+  geom_point_rast(alpha = .3, raster.dpi = 300, size = .5) + 
+  stat_cor(method = "pearson") +
+  labs(x = 'MAF (NyuWa)', y = 'MAF (1KGP AFR)') +
+  geom_abline(slope = 1, intercept = 0, color = 'blue')
+p.af_cmp.afr
+```
+
+### Align plots
+
+```{r fig.width=5, fig.height=2.5}
+p.af_cmp = p.af_cmp.all + p.af_cmp.eas +
+  plot_layout(ncol = 2)
+p.af_cmp
+
+ggsave(p.af_cmp,
+  filename = here::here("output", DOCNAME, "Fig.dataset_cmp_AF.pdf"),
+  height = 3.5, width = 7
+)
+saveRDS(p.af_cmp, file = here::here("output", DOCNAME, "Fig.dataset_cmp_AF.rds"))
+```
+
+## Allele freq (NyuWa and 1KGP)
+
+Load allele info
+
+```{r load-allele-info, message=FALSE, warning=FALSE}
+allele_info.nyuwa <- read_tsv("/niuyw-usb-disk/Projects/STR/str_mutational/allele_info.nyuwa.txt") %>%
+  mutate(motif_len = period) %>%
+  mutate(period = case_when(
+    period == 2 ~ "Di-",
+    period == 3 ~ "Tri-",
+    period == 4 ~ "Tet-",
+    period == 5 ~ "Pen-",
+    period == 6 ~ "Hex-"
+  )) %>%
+  mutate(period = factor(period, levels = c("Di-", "Tri-", "Tet-", "Pen-", "Hex-")))
+allele_info.1kgp <- read_tsv("/niuyw-usb-disk/Projects/STR/str_mutational/allele_info.1kgp.txt") %>%
+  mutate(motif_len = period) %>%
+  mutate(period = case_when(
+    period == 2 ~ "Di-",
+    period == 3 ~ "Tri-",
+    period == 4 ~ "Tet-",
+    period == 5 ~ "Pen-",
+    period == 6 ~ "Hex-"
+  )) %>%
+  mutate(period = factor(period, levels = c("Di-", "Tri-", "Tet-", "Pen-", "Hex-")))
+```
+
+Plot
+
+```{r fig.width=7, fig.height=2.5}
+p.af.nyuwa <- allele_info.nyuwa %>%
+  mutate(bin = cut(af,
+    c(
+      0, 0.001, 0.01,
+      0.1, 0.5, 0.9,
+      0.99, 0.999, 1
+    ),
+    labels = c(
+      "0.001", "0.01",
+      "0.1", "0.5", "0.9",
+      "0.99", "0.999", "1"
+    )
+  )) %>%
+  group_by(period, bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n / sum(n) * 100) %>%
+  ggplot(aes(x = bin, y = prop, fill = period)) +
+  geom_col(position = position_dodge()) +
+  scale_fill_manual(values = cPalette) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x = "Allele frequency bins", y = "% of alleles",
+    #title = "NyuWa",
+    fill = NULL
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.position = c(.8, .8)
+  )
+
+p.af.1kgp <- allele_info.1kgp %>%
+  mutate(bin = cut(af,
+    c(
+      0, 0.001, 0.01,
+      0.1, 0.5, 0.9,
+      0.99, 0.999, 1
+    ),
+    labels = c(
+      "0.001", "0.01",
+      "0.1", "0.5", "0.9",
+      "0.99", "0.999", "1"
+    )
+  )) %>%
+  group_by(period, bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n / sum(n) * 100) %>%
+  ggplot(aes(x = bin, y = prop, fill = period)) +
+  geom_col(position = position_dodge()) +
+  scale_fill_manual(values = cPalette) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x = "Allele frequency bins", y = "% of alleles",
+    #title = "1KGP",
+    fill = NULL
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.position = c(.8, .8)
+  )
+
+p.af = p.af.nyuwa + p.af.1kgp +
+  plot_layout(ncol = 2)
+p.af
+```
+
+## Call rate
+
+Load
+
+```{r load-callrate, message=FALSE, warning=FALSE}
+nyuwa = read_tsv("/niuyw-usb-disk/Projects/STR/cmp_NyuWa_1KGP/specific_nyuwa.txt", col_names = FALSE)
+mean(nyuwa$X1*100)
+
+kgp = read_tsv("/niuyw-usb-disk/Projects/STR/cmp_NyuWa_1KGP/specific_1kgp.txt", col_names = FALSE)
+mean(kgp$X1*100)
+```
+
+Plot
+
+```{r fig.width=7, fig.height=2.5}
+p1 = nyuwa %>%
+  ggplot(aes(x = X1*100)) +
+  geom_histogram(binwidth = 1, fill = "#1f77b4") +
+  geom_vline(xintercept = mean(nyuwa$X1*100), linetype = "dashed") +
+  scale_y_log10(
+    expand = c(0, 0),
+    breaks = trans_breaks("log10", function(x) 10^x),
+    labels = trans_format("log10", math_format(10^.x))
+  ) +
+  labs(x = "Loci call rate of 1KGP dataset (%)", y = "# of pSTR",
+       title = "NyuWa specific pSTRs")
+p2 = kgp %>%
+  ggplot(aes(x = X1*100)) +
+  geom_histogram(binwidth = 1, fill = "#1f77b4") +
+  geom_vline(xintercept = mean(kgp$X1*100), linetype = "dashed") +
+  scale_y_log10(
+    expand = c(0, 0),
+    breaks = trans_breaks("log10", function(x) 10^x),
+    labels = trans_format("log10", math_format(10^.x))
+  ) +
+  labs(x = "Loci call rate of NyuWa dataset (%)", y = "# of pSTR",
+       title = "1KGP specific pSTRs")
+p.callrate = p1 + p2 +
+  plot_layout(ncol = 2)
+p.callrate
+
+ggsave(p.callrate,
+  filename = here::here("output", DOCNAME, "Fig.dataset_specific_loci.callrate.pdf"),
+  height = 3.5, width = 7
+)
+saveRDS(p.callrate, file = here::here("output", DOCNAME, "Fig.dataset_specific_loci.callrate.rds"))
+```
+
+## Align plots
+
+```{r fig.width=7, fig.height=8.5}
+p = p.af/p.callrate/p.af_cmp +
+  plot_layout(heights = c(2.5, 2.5, 3.5))
+p
+
+ggsave(p,
+  filename = here::here("output", DOCNAME, "Fig.dataset_cmp.pdf"),
+  height = 8.5, width = 7
+)
+```
+
+## Session info
+

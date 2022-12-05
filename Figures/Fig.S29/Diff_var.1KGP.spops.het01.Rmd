@@ -1,0 +1,373 @@
+---
+title: "Diff_var.1KGP.spops.het01"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "Diff_var.1KGP.spops.het01"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # axis.title
+  rel_small = 8 / 10, # axis.text
+  rel_tiny = 9 / 10,
+  rel_large = 10 / 10
+))
+geom.text.size <- 8 / (14 / 5)
+
+# heatmap
+library(pheatmap)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+Load rds (fast)
+
+```{r load-rds, cache=FALSE}
+dat_lst <- readRDS(here::here("output", DOCNAME, "diff_var.rds"))
+```
+
+## Load and neat
+
+Load STR info
+
+```{r message=FALSE, warning=FALSE, eval=FALSE}
+str_info <- read_tsv("/T02Data/niuyw/niuyw-usb-disk/Projects/STR/str_info/str_info.txt") %>%
+  filter(het > 0.1) %>%
+  mutate(csq2 = case_when(
+    csq == "upstream" ~ "Promoter",
+    csq == "nc_intron" ~ "Noncoding_intron",
+    csq == "intron" ~ "Coding_intron",
+    csq == "downstream" ~ "Downstream",
+    csq == "UTR3" ~ "3'UTR",
+    csq == "intergenic" ~ "Intergenic",
+    csq == "nc_exon" ~ "Noncoding_exon",
+    csq == "UTR5" ~ "5'UTR",
+    TRUE ~ csq
+  ))
+dim(str_info)
+```
+
+Load FC and p values.
+
+```{r load-dat, message=FALSE, warning=FALSE, eval=FALSE}
+data_dir <- "/niuyw-usb-disk/Projects/STR/diff_var"
+chroms <- paste0("chr", 1:22)
+
+# pops to cmp
+cmp_pops <- c(
+  "AFRvsSAS", "AMRvsSAS", "EURvsSAS", "EASvsSAS",
+  "AFRvsEAS", "AMRvsEAS", "EURvsEAS",
+  "AFRvsEUR", "AMRvsEUR",
+  "AFRvsAMR"
+)
+
+# load
+dat_lst <- lapply(cmp_pops, function(x) {
+  tmp_lst <- lapply(chroms, function(y) {
+    read_tsv(file.path(data_dir, x, paste0(y, ".sd_diff.txt")))
+  })
+  df <- do.call(rbind, tmp_lst)
+  # get q-value
+  df <- df %>%
+    mutate(permutation.p = case_when(
+      permutation.p == 0 ~ 0.001,
+      TRUE ~ permutation.p
+    )) %>%
+    mutate(q = p.adjust(permutation.p, method = "BH")) %>%
+    left_join(str_info, by = "site") %>%
+    arrange(q, -abs(sd_diff))
+  df
+})
+names(dat_lst) <- cmp_pops
+```
+
+## Stats
+
+```{r}
+lapply(dat_lst, FUN = function(x) {
+  x %>%
+    filter(q < 0.01, abs(sd_diff) > 1.5) %>%
+    mutate(change = case_when(
+      sd_diff > 0 ~ "Up",
+      TRUE ~ "Dn"
+    )) %>%
+    pull(change) %>%
+    table()
+})
+```
+
+## Show {.tabset}
+
+Top 100
+
+```{r show-top100, results = "hide"}
+# pops to cmp
+cmp_pops <- names(dat_lst)
+src_list <- lapply(cmp_pops, function(s) {
+  src <- c(
+    "### {{s}} {.unnumbered}",
+    "```{r show-top100-{{s}}}",
+    "df = dat_lst[['{{s}}']]",
+    "df_q001 = df %>% dplyr::filter(q < .01, abs(sd_diff) > 1.5)",
+    "dim(df_q001)",
+    "DT::datatable(head(df_q001, 100), filter = 'top')",
+    "```",
+    ""
+  )
+  # print(src)
+  knitr::knit_expand(text = src)
+})
+
+out <- knitr::knit_child(text = unlist(src_list), options = list(cache = FALSE))
+```
+
+`r out`
+
+## Plot
+
+Plot
+
+```{r fig.width=8, fig.height=8}
+# pops to cmp
+cmp_pops <- names(dat_lst)
+
+plot_volcano <- function(dat = NULL) {
+  dat %>%
+    ggplot(aes(x = sd_diff, y = -log10(q))) +
+    geom_point_rast(size = 0.1, raster.dpi = 300, color = "grey50") +
+    geom_hline(
+      yintercept = -log10(0.01),
+      linetype = "dashed",
+      color = "gray"
+    ) +
+    geom_vline(
+      xintercept = 0,
+      linetype = "dashed",
+      color = "gray"
+    ) +
+    labs(
+      x = "SD diff",
+      y = expression(-Log[10] ~ q - value)
+    )
+}
+
+# plot
+p_lst <- lapply(cmp_pops, function(x) {
+  # print(x)
+  p <- plot_volcano(dat_lst[[x]])
+  p
+})
+# p_lst[[1]]
+
+# layout
+layout <- c(
+  area(t = 1, l = 1),
+  area(t = 1, l = 2),
+  area(t = 1, l = 3),
+  area(t = 1, l = 4),
+  area(t = 2, l = 1),
+  area(t = 2, l = 2),
+  area(t = 2, l = 3),
+  area(t = 3, l = 1),
+  area(t = 3, l = 2),
+  area(t = 4, l = 1)
+)
+# plot(layout)
+
+p <- wrap_plots(p_lst) +
+  plot_layout(design = layout)
+p
+```
+
+## Plot (same scale)
+
+Plot
+
+```{r fig.width=8, fig.height=8}
+# pops to cmp
+cmp_pops <- names(dat_lst)
+
+plot_volcano2 <- function(dat = NULL) {
+  dat %>%
+    ggplot(aes(x = sd_diff, y = -log10(q))) +
+    geom_point_rast(size = 0.1, raster.dpi = 300, color = "grey50") +
+    geom_hline(
+      yintercept = -log10(0.01),
+      linetype = "dashed",
+      color = "gray"
+    ) +
+    geom_vline(
+      xintercept = 0,
+      linetype = "dashed",
+      color = "gray"
+    ) +
+    xlim(-5.41, 6.61) +
+    ylim(NA, 3) +
+    labs(
+      x = "SD diff",
+      y = expression(-Log[10] ~ q - value)
+    )
+}
+
+# plot
+p_lst <- lapply(cmp_pops, function(x) {
+  # print(x)
+  p <- plot_volcano2(dat_lst[[x]])
+  p
+})
+# p_lst[[1]]
+
+p <- wrap_plots(p_lst) +
+  plot_layout(design = layout)
+p
+
+ggsave2(p,
+  filename = here::here("output", DOCNAME, "Fig.SDDiff_1KGP_spops.same_scale.pdf"),
+  height = 8, width = 8
+)
+saveRDS(p, file = here::here("output", DOCNAME, "Fig.SDDiff_1KGP_spops.same_scale.rds"))
+```
+
+## Plot (same scale, label selected)
+
+Get selected sites
+
+```{r get-selected}
+site_selected <- c(
+  "chr8:127102614", "chr7:2812637", "chr12:50505002", "chr2:44076978"
+)
+
+dat_lst.selected <- lapply(dat_lst, function(x) {
+  x %>%
+    filter(site %in% site_selected)
+})
+names(dat_lst.selected) <- names(dat_lst)
+```
+
+Plot
+
+```{r fig.width=8, fig.height=8}
+# pops to cmp
+cmp_pops <- names(dat_lst)
+
+plot_volcano2 <- function(dat = NULL, dat4label = NULL) {
+  dat %>%
+    ggplot(aes(x = sd_diff, y = -log10(q))) +
+    geom_point_rast(size = 0.2, raster.dpi = 300, color = "grey50") +
+    geom_hline(
+      yintercept = -log10(0.01),
+      linetype = "dashed",
+      color = "gray"
+    ) +
+    geom_vline(
+      xintercept = 0,
+      linetype = "dashed",
+      color = "gray"
+    ) +
+    geom_point_rast(
+      data = dat[dat$site %in% dat4label$site, ], color = "red",
+      size = .6, raster.dpi = 300
+    ) +
+    geom_text_repel(
+      data = dat4label,
+      mapping = aes(x = sd_diff, y = -log10(q), label = gene_symbol),
+      size = geom.text.size,
+      inherit.aes = FALSE
+    ) +
+    xlim(-5.41, 6.61) +
+    ylim(NA, 3) +
+    labs(
+      x = "SD diff",
+      y = expression(-Log[10] ~ q - value)
+    )
+}
+
+# plot
+p_lst <- lapply(cmp_pops, function(x) {
+  # print(x)
+  p <- plot_volcano2(dat_lst[[x]], dat_lst.selected[[x]])
+  p
+})
+
+p <- wrap_plots(p_lst) +
+  plot_layout(design = layout)
+p
+```
+
+## Output
+
+```{r write-tsv, eval=FALSE}
+xxx <- lapply(cmp_pops, function(x) {
+  dat_lst[[x]] %>%
+    write_tsv(file = here::here("output", DOCNAME, paste0(x, ".sd_diff.tsv")))
+})
+
+xxx <- lapply(cmp_pops, function(x) {
+  dat_lst[[x]] %>%
+    filter(q < 0.01, abs(sd_diff) > 1.5) %>%
+    write_tsv(file = here::here("output", DOCNAME, paste0(x, ".SDDiff1.5_q001.tsv")))
+})
+```
+
+## Save
+
+```{r save, cache=FALSE, eval=FALSE}
+saveRDS(dat_lst, file = here::here("output", DOCNAME, "diff_var.rds"))
+```
+
+## Session info

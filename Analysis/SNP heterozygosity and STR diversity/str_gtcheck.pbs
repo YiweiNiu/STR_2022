@@ -1,0 +1,43 @@
+#!/bin/bash
+#PBS -V
+#PBS -j eo
+#PBS -N chr22.str_gtcheck
+#PBS -q Fat
+#PBS -l nodes=1:ppn=1
+#PBS -d /home2/niuyw/project/STR/STR_diversity_SNP_het/logs
+
+# WORK DIR
+WORKDIR=/home2/niuyw/project/STR/STR_diversity_SNP_het
+
+# chrom
+echo $chrom
+
+# PPN
+PPN=1
+
+# genome and annotations
+ANNODIR=/home2/niuyw/RefData
+GRCh38_REFERENCE=$ANNODIR/Homo_sapiens/GRCh38_no_alt/genome.fa
+GRCh38_GTF=$ANNODIR/Homo_sapiens/GENCODE_v27/gencode.v27.annotation.gtf
+GRCh38_bowtie2=$ANNODIR/Homo_sapiens/GRCh38_no_alt/Bowtie2Index/GRCh38_no_alt
+GRCh38_STAR=$ANNODIR/Homo_sapiens/GRCh38_no_alt/STARgenomes
+
+# tools dir
+TOOLDIR=/home2/niuyw/software
+path2java=$TOOLDIR/jdk1.8.0_311/bin/java
+path2bedtools=$TOOLDIR/bedtools2/bin/bedtools
+path2samtools=$TOOLDIR/samtools.1.9/bin/samtools
+path2picard=$TOOLDIR/picard-2.9.2/picard.jar
+
+echo Start time is `date +%Y/%m/%d--%H:%M`
+
+input=/home2/niuyw/project/STR/02_FilteredRaw220120/${chrom}.vcf.gz
+output=$WORKDIR/gtcheck
+if [ ! -d $output ]; then mkdir -p $output; fi
+
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$TOOLDIR/htslib.1.14/lib
+$TOOLDIR/bcftools-1.7/bcftools gtcheck -G 1 $input > $output/${chrom}.discordance.txt
+
+echo Finish time is `date +%Y/%m/%d--%H:%M`
+
+

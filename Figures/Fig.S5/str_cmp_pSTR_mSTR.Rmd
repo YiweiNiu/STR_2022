@@ -1,0 +1,340 @@
+---
+title: "str_cmp_pSTR_mSTR"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME = "str_cmp_pSTR_mSTR"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+    if (before) {
+        print(paste("Start:", Sys.time()))
+        NOW <<- Sys.time()
+    } else {
+        print(paste("Stop:", Sys.time()))
+        print(Sys.time() - NOW)
+    }
+})
+
+knitr::opts_chunk$set(
+    autodep        = TRUE,
+    cache.lazy     = FALSE, 
+    cache.comments = FALSE,
+    echo           = TRUE,
+    error          = FALSE,
+    fig.align      = "center",
+    fig.width      = 10,
+    fig.height     = 8,
+    message        = FALSE,
+    warning        = FALSE,
+    timeit         = TRUE
+)
+```
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+library(venneuler)
+
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+geom.text.size <- 7
+
+# heatmap
+library(pheatmap)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+source(here::here("code/geom_boxplot2.R"))
+```
+
+## Load data
+
+Reference set
+
+```{r message=FALSE, warning=FALSE}
+rstr = read_tsv("/niuyw-usb-disk/Projects/STR/str_stat/hg38_ver13.bed",
+                col_names = FALSE) %>%
+  filter(X4 <= 6, X1 != "chrX", X1 != "chrY") %>%
+  mutate(ref_len = X3-X2+1) %>%
+  unite("site", c("X1", "X2"), sep = ":") %>%
+  dplyr::select(site, ref_len, PERIOD = X4, motif = X5)
+dim(rstr)
+```
+
+pSTR
+
+```{r message=FALSE, warning=FALSE}
+pstr = read_csv("/niuyw-usb-disk/Projects/STR/str_stat/str_info.csv") %>%
+  mutate(ref_len = PERIOD*REF) %>%
+  unite("site", c("CHROM", "POS"), sep = ":") %>%
+  mutate(period = case_when(
+    PERIOD == 2 ~ "Di-",
+    PERIOD == 3 ~ "Tri-",
+    PERIOD == 4 ~ "Tet-",
+    PERIOD == 5 ~ "Pen-",
+    PERIOD == 6 ~ "Hex-"
+  )) %>%
+  mutate(period = factor(period, levels = c("Di-", "Tri-", "Tet-", "Pen-", "Hex-"))) %>%
+  mutate(type = "pSTR")
+head(pstr)
+```
+
+mSTR
+
+```{r message=FALSE, warning=FALSE}
+mstr = read_csv("/niuyw-usb-disk/Projects/STR/str_stat/npstr_info.csv") %>%
+  mutate(ref_len = PERIOD*REF) %>%
+  unite("site", c("CHROM", "POS"), sep = ":") %>%
+  mutate(period = case_when(
+    PERIOD == 2 ~ "Di-",
+    PERIOD == 3 ~ "Tri-",
+    PERIOD == 4 ~ "Tet-",
+    PERIOD == 5 ~ "Pen-",
+    PERIOD == 6 ~ "Hex-"
+  )) %>%
+  mutate(period = factor(period, levels = c("Di-", "Tri-", "Tet-", "Pen-", "Hex-"))) %>%
+  mutate(type = "mSTR")
+head(mstr)
+```
+
+## Neat
+
+```{r}
+rstr = rstr %>%
+  mutate(type = case_when(
+    site %in% pstr$site ~ "pSTR",
+    site %in% mstr$site ~ "mSTR",
+    TRUE ~ "N.A."
+  )) %>%
+  mutate(tyep = factor(type, levels = c("NA", "mSTR", "pSTR"))) %>%
+  mutate(period = case_when(
+    PERIOD == 2 ~ "Di-",
+    PERIOD == 3 ~ "Tri-",
+    PERIOD == 4 ~ "Tet-",
+    PERIOD == 5 ~ "Pen-",
+    PERIOD == 6 ~ "Hex-"
+  )) %>%
+  mutate(period = factor(period, levels = c("Di-", "Tri-", "Tet-", "Pen-", "Hex-")))
+```
+
+## Stats
+
+### unit length
+
+rstr
+
+```{r}
+rstr %>%
+  group_by(PERIOD) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n) * 100)
+```
+
+pstr
+
+```{r}
+pstr %>%
+  group_by(PERIOD) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n) * 100)
+```
+
+mstr
+
+```{r}
+mstr %>%
+  group_by(PERIOD) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n) * 100)
+```
+
+### reference length
+
+rstr
+
+```{r}
+mean(rstr$ref_len)
+median(rstr$ref_len)
+```
+
+pstr
+
+```{r}
+mean(pstr$ref_len)
+median(pstr$ref_len)
+```
+
+mstr
+
+```{r}
+mean(mstr$ref_len)
+median(mstr$ref_len)
+```
+
+## Plot
+
+### Unit length
+
+All
+
+```{r fig.width=3.5, fig.height=3}
+d4p = rstr %>%
+  group_by(PERIOD, type) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n)*100) %>%
+  mutate(type = factor(type, levels = c("N.A.", "mSTR", "pSTR")))
+DT::datatable(d4p)
+
+p.unit = d4p %>%
+  ggplot(aes(x = PERIOD, y = prop, fill = type)) +
+  geom_col() +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = c("#d6d6d6", "#476fa9", "#ca3226")) +
+  labs(x = "Repeat unit lenth", y = "% of loci",
+       fill = NULL)
+p.unit
+```
+
+pSTR
+
+```{r fig.width=2.5, fig.height=2}
+p.unit.pstr = pstr %>%
+  group_by(period) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n)*100) %>%
+  ggplot(aes(x = "", y = prop, fill = period)) +
+  geom_bar(width = 1, stat = "identity", color = "white") +
+  coord_polar("y", start = 0) +
+  scale_fill_manual(values = period_color_map) +
+  labs(title = "pSTR") +
+  theme_void()
+p.unit.pstr
+```
+
+mSTR
+
+```{r fig.width=2.5, fig.height=2}
+p.unit.mstr = mstr %>%
+  group_by(period) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n)*100) %>%
+  ggplot(aes(x = "", y = prop, fill = period)) +
+  geom_bar(width = 1, stat = "identity", color = "white") +
+  coord_polar("y", start = 0) +
+  scale_fill_manual(values = period_color_map) +
+  labs(title = "mSTR") +
+  theme_void()
+p.unit.mstr
+```
+
+### reference length
+
+rSTR
+
+```{r}
+table(rstr$ref_len)
+```
+
+pSTR
+
+```{r}
+table(pstr$ref_len)
+```
+
+mSTR
+
+```{r}
+table(mstr$ref_len)
+```
+
+Plot
+
+```{r fig.width=3.5, fig.height=3}
+d4p = rbind(pstr, mstr) %>%
+  mutate(bin = cut(ref_len, c(0, 10, 20, 30, 40, 60, Inf),
+    labels = c("10", "20", "30", "40", "60", ">60"),
+    include.lowest = FALSE
+  )) %>%
+  group_by(type, bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n)*100)
+
+d4p %>%
+  ggplot(aes(x = type, y = prop, fill = bin)) +
+  geom_col() +
+  scale_fill_jco()
+```
+
+### Top motif
+
+pSTR
+
+```{r}
+pstr %>%
+  group_by(RU) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n)*100) %>%
+  arrange(-n) %>%
+  head(10) %>%
+  DT::datatable()
+```
+
+mSTR
+
+```{r}
+mstr %>%
+  group_by(RU) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n)*100) %>%
+  arrange(-n) %>%
+  head(10) %>%
+  DT::datatable()
+```
+
+## Align plots
+
+```{r fig.width=6, fig.height=4}
+p1 = p.unit.pstr/p.unit.mstr +
+  plot_layout(guides = "collect")
+p = p.unit + p1 +
+  plot_layout(widths = c(3.5, 2.5))
+p
+
+ggsave(p, filename = here::here("output", DOCNAME, "Fig.cmp_pSTR_mSTR.pdf"), width = 6, height = 4)
+saveRDS(p, file = here::here("output", DOCNAME, "Fig.cmp_pSTR_mSTR.rds"))
+```
+
+## Session info
+
+

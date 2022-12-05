@@ -1,0 +1,280 @@
+---
+title: "eSTR_aSTR.enrichEpiFeature"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "eSTR_aSTR.enrichEpiFeature"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+查看 eSTR/aSTR 在不同基因组元件上的 enrichment
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggbeeswarm)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+geom.text.size <- 7
+
+# heatmap
+library(pheatmap)
+library(corrplot)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+## Load data
+
+eSTR
+
+```{r load-data-eSTR, cache=FALSE, warning=FALSE, message=FALSE}
+# genomic feature
+e.g_feature = read_tsv("/T02Data/niuyw/niuyw-usb-disk/Projects/STR/genomic_features/eSTR.GAT.tsv") %>%
+  mutate(annotation = case_when(
+    annotation == "cds" ~ "CDS",
+    annotation == "noncoding_intron" ~ "Noncoding_intron",
+    annotation == "intergenic" ~ "Intergenic",
+    annotation == "noncoding_exon" ~ "Noncoding_exon",
+    annotation == "coding_intron" ~ "Coding_intron",
+    annotation == "utr3" ~ "3'UTR",
+    annotation == "utr5" ~ "5'UTR",
+    annotation == "promoter" ~ "Promoter",
+    annotation == "downstream" ~ "Downstream"
+  ))
+
+# GM12878
+e.GM12878 = read_tsv("/niuyw-usb-disk/Projects/STR/eSTR/ENCODE_data/GM12878.GAT.tsv")
+e.GM12878.ChromHMM = read_tsv("/niuyw-usb-disk/Projects/STR/eSTR/ENCODE_data/GM12878.ChromHMM.GAT.tsv") %>%
+  mutate(q_bh = p.adjust(pvalue, method = "BH"))
+
+# GM06990
+e.GM06990 = read_tsv("/niuyw-usb-disk/Projects/STR/eSTR/ENCODE_data/GM06990.GAT.tsv")
+e.GM06990.ChromHMM = read_tsv("/niuyw-usb-disk/Projects/STR/eSTR/ENCODE_data/GM06990.ChromHMM.GAT.tsv") %>%
+  mutate(q_bh = p.adjust(pvalue, method = "BH"))
+
+# GM12865
+e.GM12865 = read_tsv("/niuyw-usb-disk/Projects/STR/eSTR/ENCODE_data/GM12865.GAT.tsv")
+e.GM12865.ChromHMM = read_tsv("/niuyw-usb-disk/Projects/STR/eSTR/ENCODE_data/GM12865.ChromHMM.GAT.tsv") %>%
+  mutate(q_bh = p.adjust(pvalue, method = "BH"))
+```
+
+aSTR
+
+```{r load-data-aSTR, cache=FALSE, warning=FALSE, message=FALSE}
+# genomic feature
+a.g_feature = read_tsv("/T02Data/niuyw/niuyw-usb-disk/Projects/STR/genomic_features/aSTR.GAT.tsv") %>%
+  mutate(annotation = case_when(
+    annotation == "cds" ~ "CDS",
+    annotation == "noncoding_intron" ~ "Noncoding_intron",
+    annotation == "intergenic" ~ "Intergenic",
+    annotation == "noncoding_exon" ~ "Noncoding_exon",
+    annotation == "coding_intron" ~ "Coding_intron",
+    annotation == "utr3" ~ "3'UTR",
+    annotation == "utr5" ~ "5'UTR",
+    annotation == "promoter" ~ "Promoter",
+    annotation == "downstream" ~ "Downstream"
+  ))
+
+# GM12878
+a.GM12878 = read_tsv("/niuyw-usb-disk/Projects/STR/aSTR/ENCODE_data/GM12878.GAT.tsv")
+a.GM12878.ChromHMM = read_tsv("/niuyw-usb-disk/Projects/STR/aSTR/ENCODE_data/GM12878.ChromHMM.GAT.tsv") %>%
+  mutate(q_bh = p.adjust(pvalue, method = "BH"))
+
+# GM06990
+a.GM06990 = read_tsv("/niuyw-usb-disk/Projects/STR/aSTR/ENCODE_data/GM06990.GAT.tsv")
+a.GM06990.ChromHMM = read_tsv("/niuyw-usb-disk/Projects/STR/aSTR/ENCODE_data/GM06990.ChromHMM.GAT.tsv") %>%
+  mutate(q_bh = p.adjust(pvalue, method = "BH"))
+
+# GM12865
+a.GM12865 = read_tsv("/niuyw-usb-disk/Projects/STR/aSTR/ENCODE_data/GM12865.GAT.tsv")
+a.GM12865.ChromHMM = read_tsv("/niuyw-usb-disk/Projects/STR/aSTR/ENCODE_data/GM12865.ChromHMM.GAT.tsv") %>%
+  mutate(q_bh = p.adjust(pvalue, method = "BH"))
+```
+
+## Neat
+
+Combine genomic feature and GM12878
+
+```{r}
+e.GM12878 = rbind(e.GM12878, e.g_feature) %>%
+  mutate(q_bh = p.adjust(pvalue, method = "BH"))
+
+a.GM12878 = rbind(a.GM12878, a.g_feature) %>%
+  mutate(q_bh = p.adjust(pvalue, method = "BH"))
+```
+
+Combine GM06990 and GM12865
+
+```{r}
+e.GM06990 = e.GM06990 %>%
+  mutate(annotation = paste("(GM06990) ", annotation))
+e.GM12865 = e.GM12865 %>%
+  mutate(annotation = paste("(GM12865) ", annotation))
+e.GM06990_GM12865 = rbind(e.GM06990, e.GM12865) %>%
+  mutate(q_bh = p.adjust(pvalue, method = "BH"))
+
+a.GM06990 = a.GM06990 %>%
+  mutate(annotation = paste("(GM06990) ", annotation))
+a.GM12865 = a.GM12865 %>%
+  mutate(annotation = paste("(GM12865) ", annotation))
+a.GM06990_GM12865 = rbind(a.GM06990, a.GM12865) %>%
+  mutate(q_bh = p.adjust(pvalue, method = "BH"))
+```
+
+## Gnomic feature and Epi features {.tabset}
+
+Plot function
+
+```{r plot-function}
+plot_enrich <- function(dat=NULL) {
+  dat %>%
+    mutate(sig = case_when(
+      q_bh >= 0.05 ~ "n.s.",
+      fold > 1 ~ "pos",
+      TRUE ~ "neg"
+    )) %>%
+    mutate(sig = factor(sig, levels = c("pos", "neg", "n.s."))) %>%
+    ggplot(aes(x = fold, y = reorder(annotation, fold), color = sig)) +
+    geom_point() +
+    geom_pointrange(aes(xmin = observed/CI95low, xmax = observed/CI95high)) +
+    geom_vline(xintercept = 1, linetype = "dashed", color = "gray") +
+    scale_color_manual(values = c("#ca3226", "#476fa9", "gray")) +
+    labs(x = "Fold enrichment/depletion", y = NULL,
+         color = "pvalue") +
+    theme(legend.position = "none")
+}
+```
+
+### GM12878
+
+```{r GM12878, fig.width=6, fig.height=4}
+p1 = plot_enrich(e.GM12878)
+p2 = plot_enrich(a.GM12878)
+p.GM12878 = p1 + p2 +
+  plot_layout(guides = "collect")
+p.GM12878
+```
+
+### GM06990 and GM12865
+
+```{r GM06990-GM12865, fig.width=6, fig.height=2}
+p1 = plot_enrich(e.GM06990_GM12865)
+p2 = plot_enrich(a.GM06990_GM12865)
+p.GM06990_GM12865 = p1 + p2 +
+  plot_layout(guides = "collect")
+p.GM06990_GM12865
+```
+
+## ChromHMM {.tabset}
+
+### GM12878
+
+```{r GM12878-ChromHMM, fig.width=6, fig.height=3.5}
+p1 = plot_enrich(e.GM12878.ChromHMM)
+p2 = plot_enrich(a.GM12878.ChromHMM)
+p.GM12878.ChromHMM = p1 + p2 +
+  plot_layout(guides = "collect")
+p.GM12878.ChromHMM
+```
+
+### GM06990
+
+```{r GM06990-ChromHMM, fig.width=6, fig.height=4}
+p1 = plot_enrich(e.GM06990.ChromHMM)
+p2 = plot_enrich(a.GM06990.ChromHMM)
+p.GM06990.ChromHMM = p1 + p2 +
+  plot_layout(guides = "collect")
+p.GM06990.ChromHMM
+```
+
+### GM12865
+
+```{r GM12865-ChromHMM, fig.width=6, fig.height=4}
+p1 = plot_enrich(e.GM12865.ChromHMM)
+p2 = plot_enrich(a.GM12865.ChromHMM)
+p.GM12865.ChromHMM = p1 + p2 +
+  plot_layout(guides = "collect")
+p.GM12865.ChromHMM
+```
+
+## Align plots
+
+Main
+
+```{r fig.width=7, fig.height=7.5}
+p = p.GM12878/p.GM12878.ChromHMM +
+  plot_layout(heights = c(4, 3.5))
+p
+
+ggsave(p, filename = here::here("output", DOCNAME, "Fig.eSTR_aSTR.enrichEpiFeature.GM12878.pdf"),
+       height = 7, width = 7)
+saveRDS(p, file = here::here("output", DOCNAME, "Fig.eSTR_aSTR.enrichEpiFeature.GM12878.rds"))
+```
+
+Supp
+
+```{r fig.width=7, fig.height=9}
+p = p.GM06990_GM12865/p.GM06990.ChromHMM/p.GM12865.ChromHMM +
+  plot_layout(heights = c(1, 2, 2))
+p
+
+ggsave(p, filename = here::here("output", DOCNAME, "Fig.eSTR_aSTR.enrichEpiFeature.GM06990_GM12865.pdf"),
+       height = 10, width = 7)
+saveRDS(p, file = here::here("output", DOCNAME, "Fig.eSTR_aSTR.enrichEpiFeature.GM06990_GM12865.rds"))
+```
+
+## Session info
+

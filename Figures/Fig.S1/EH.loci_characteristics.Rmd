@@ -1,0 +1,173 @@
+---
+title: "EH.loci_characteristics"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "EH.loci_characteristics"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+Characteristics of disease loci
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggbeeswarm)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+
+# heatmap
+library(pheatmap)
+library(corrplot)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+## Load data
+
+Load loci
+
+```{r load-loci, cache=FALSE, warning=FALSE, message=FALSE}
+eh_loci = read_tsv("/niuyw-usb-disk/Projects/STR/ExpansionHunter/variant_catalog.bed")
+colnames(eh_loci)[1] = 'Chrom'
+head(eh_loci)
+```
+
+## Plot
+
+Repeat type
+
+```{r plot-RepeatType, fig.width=1.5, fig.height=3}
+p.RepeatType = eh_loci %>%
+  group_by(RepeatType) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n)) %>%
+  ggplot(aes(x = reorder(RepeatType, -n), y = n)) +
+  geom_col(fill = "cyan4") +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 43)) +
+  geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25) +
+  labs(x = "Repeat type", y = "# of Loci") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p.RepeatType
+```
+
+Motif length
+
+```{r plot-Motif-len, fig.width=3, fig.height=3}
+p.Motif = eh_loci %>%
+  mutate(
+    motif_len = str_length(Motif)
+  ) %>%
+  mutate(motif_len = factor(motif_len)) %>%
+  group_by(motif_len) %>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = motif_len, y = n)) +
+  geom_col(fill = "cyan4") +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 47)) +
+  geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25) +
+  labs(x = "Motif length (bp)", y = "# of Loci")
+p.Motif
+```
+
+Genomic regions
+
+```{r plot-GeneRegion, fig.width=2.5, fig.height=3}
+p.GeneRegion = eh_loci %>%
+  mutate(GeneRegion = case_when(
+    GeneRegion == "coding: poly-aspartic-acid" ~ "coding: other",
+    GeneRegion == "coding: polyglycine" ~ "coding: other",
+    GeneRegion == "coding: polyserine" ~ "coding: other",
+    TRUE ~ GeneRegion
+  )) %>%
+  group_by(GeneRegion) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n)) %>%
+  ggplot(aes(x = reorder(GeneRegion, -n), y = n)) +
+  geom_col(fill = "cyan4") +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 18)) +
+  geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25) +
+  labs(x = "Genomic regions", y = "# of Loci") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p.GeneRegion
+```
+
+Inheritance mode
+
+```{r plot-Inheritance, fig.width=2, fig.height=3}
+p.Inheritance = eh_loci %>%
+  mutate(Inheritance = str_split(Inheritance, ';', simplify = TRUE)[,1]) %>%
+  group_by(Inheritance) %>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = reorder(Inheritance, -n), y = n)) +
+  geom_col(fill = "cyan4") +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 47)) +
+  geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25) +
+  labs(x = "Inheritance mode", y = "# of Loci")
+p.Inheritance
+```
+
+## Align plots
+
+```{r fig.width=8, fig.height=3.5}
+p = p.RepeatType + p.Motif + p.GeneRegion + p.Inheritance +
+  plot_layout(nrow = 1, widths = c(1.3, 3, 2.5, 2))
+p
+ggsave(p, filename = here::here("output", DOCNAME, "Fig.eh_loci.characteristics.pdf"), 
+       height = 3.5, width = 8)
+saveRDS(p, file = here::here("output", DOCNAME, "Fig.eh_loci.characteristics.rds"))
+```
+
+## Session info
+

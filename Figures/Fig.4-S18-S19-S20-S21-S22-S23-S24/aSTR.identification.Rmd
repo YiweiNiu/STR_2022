@@ -1,0 +1,360 @@
+---
+title: "aSTR.identification"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "aSTR.identification"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+- First, run `aSTR.identification.R` 和 `aSTR.identification.permuted.R`
+
+- Neat aSTR identification results
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+
+# heatmap
+library(pheatmap)
+library(corrplot)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+## Load data
+
+Load pudi
+
+```{r load-pudi, cache=FALSE, warning=FALSE, message=FALSE}
+rna_pudi <- readRDS(here::here("output", "aSTR.preprocess_pudi", "Geuvadis.pudi_adjusted.rds"))
+rna_pudi[1:3, 1:3]
+```
+
+Load Dapars2
+
+```{r load-dapars2, cache=FALSE, warning=FALSE, message=FALSE}
+df.DaPars2 = read_delim("/niuyw-usb-disk/Projects/Geuvadis/DaPars2/DaPars2.res.txt", delim = "\t")
+df.DaPars2[1:3, 1:5]
+```
+
+Load STR geno
+
+```{r load-STR-geno, cache=FALSE, warning=FALSE, message=FALSE}
+str_geno = read_csv("/niuyw-usb-disk/Projects/STR/eSTR/Geuvadis_445.str_geno.csv") %>%
+  column_to_rownames("site")
+str_geno[1:3, 1:3]
+```
+
+Load STR-gene pairs
+
+```{r load-STR-gene-pairs, message=FALSE, warning=FALSE, cache=FALSE}
+df.str_gene_pair = read_csv("/niuyw-usb-disk/Projects/STR/eSTR/Geuvadis_445.str_gene_pair.csv")
+head(df.str_gene_pair)
+```
+
+Load 3'aSTR result
+
+```{r load-eSTR-res, message=FALSE, warning=FALSE, cache=FALSE}
+fit_res = readRDS(here::here("output", DOCNAME, "aSTR.pudi_str.glm_fit.rds"))
+fit_res.permuted = readRDS(here::here("output", DOCNAME, "aSTR.pudi_str.glm_fit.permuted.rds"))
+```
+
+## Neat
+
+Get gene-transcript pairs
+
+```{r get-gene-transcript-pair}
+df.gene_transcript_pair = df.DaPars2 %>%
+  mutate(gene_id = str_split(Gene, "[|]", simplify = TRUE)[,2],
+         transcript = str_split(Gene, "[|]", simplify = TRUE)[,1],) %>%
+  filter(transcript %in% colnames(rna_pudi)) %>%
+  dplyr::select(gene_id, transcript)
+head(df.gene_transcript_pair)
+```
+
+No. of pairs
+
+```{r transcript-str-neat}
+df.str_transcript_pair = df.str_gene_pair %>%
+  left_join(df.gene_transcript_pair, by = "gene_id")
+
+dim(df.str_transcript_pair)
+```
+
+No. of transcripts
+
+```{r transcript-str-neat}
+# transcript-str lst
+transcript_str_lst <- split(df.str_transcript_pair$site, df.str_transcript_pair$transcript)
+length(transcript_str_lst)
+mean(sapply(transcript_str_lst, length, simplify = TRUE))
+```
+
+No. of STRs
+
+```{r STR-transcript-neat}
+str_transcript_lst = split(df.str_transcript_pair$transcript, df.str_transcript_pair$site)
+length(str_transcript_lst)
+mean(sapply(str_transcript_lst, length, simplify = TRUE))
+```
+
+aSTRs table.
+
+> We used a gene-level FDR threshold (described previously14) of 10% to identify significant STR–gene pairs. We assume most genes have, at most, a single causal eSTR. For each gene, we determined the STR association with the strongest P value. This P value was adjusted using a Bonferroni correction for the number of STRs tested per gene, to give a P value for observing a single eSTR association for each gene. We then used the list of adjusted P values (one per gene) as input to the fdrcorrection function in the statsmodels.stats.multitest module to obtain a q-value for the best eSTR for each gene. [(Fotsing et al., 2019)](https://www.nature.com/articles/s41588-019-0521-9)
+
+```{r aSTR-neat}
+# get ONE str for each transcript
+tmp.lst = lapply(fit_res, function(x){
+  x[1,]
+})
+
+df.aSTR = do.call(rbind, tmp.lst) %>%
+  mutate(final.p = p.adjust(q.value, method = "BH")) %>%
+  arrange(final.p) %>%
+  left_join(df.gene_transcript_pair, by = "transcript") %>%
+  dplyr::select(transcript, gene_id, everything())
+head(df.aSTR)
+```
+
+## Stat
+
+FDR 0.05
+
+```{r stat-fdr0.05, fig.width=5, fig.height=5}
+df.aSTR %>%
+  filter(final.p < 0.05) %>%
+  dim()
+```
+
+FDR 0.1
+
+```{r stat-fdr0.1, fig.width=5, fig.height=5}
+df.aSTR %>%
+  filter(final.p < 0.1) %>%
+  dim()
+
+# transcripts
+df.aSTR %>%
+  filter(final.p < 0.1) %>%
+  pull(transcript) %>%
+  unique() %>%
+  length()
+
+# genes
+df.aSTR %>%
+  filter(final.p < 0.1) %>%
+  pull(gene_id) %>%
+  unique() %>%
+  length()
+
+# STRs
+df.aSTR %>%
+  filter(final.p < 0.1) %>%
+  pull(site) %>%
+  unique() %>%
+  length()
+```
+
+## Plot
+
+### Q-Q plot
+
+```{r qqplot, fig.width=2.5, fig.height=2.5}
+df.fit_res.permuted = do.call(rbind, fit_res.permuted)
+df.fit_res = do.call(rbind, fit_res)
+
+# Observed data
+y = sort(-log10(df.fit_res$p.value))
+x = sort(-log10(runif(length(y))))
+
+# Control data
+yctrl = sort(-log10(df.fit_res.permuted$p.value))
+xctrl = sort(-log10(runif(length(yctrl))))
+
+# plot
+d4p = data.frame(y = y,
+                 x = x,
+                 yctrl = yctrl,
+                 xctrl = xctrl)
+p = d4p %>%
+  ggplot(aes(x=x, y=y)) +
+  geom_point_rast(color="red", size = .7, raster.dpi = 600, dev = "ragg") +
+  geom_point_rast(aes(x = xctrl, y = yctrl),
+                  color = "gray", size = .7, raster.dpi = 600, dev = "ragg") +
+  geom_abline(slope = 1, intercept = 0) +
+  labs(x = "Expected P value (-log10)",
+       y = "Observed P value (-log10)")
+p
+ggsave(p, filename = here::here("output", DOCNAME, "Fig.qqplot.pdf"),
+       height = 2.5, width = 2.5)
+saveRDS(p, file = here::here("output", DOCNAME, "Fig.qqplot.rds"))
+```
+
+### eSTR examples {.tabset}
+
+#### chr16:89551066
+
+ENST00000472354.1
+
+```{r fig.width=4, fig.height=4}
+s = "chr16:89551066"
+t = "ENST00000472354.1"
+s_geno = na.omit(unlist(str_geno[s, ]))
+t_pudi = rna_pudi[, t]
+names(t_pudi) = rownames(rna_pudi)
+t_pudi = t_pudi[names(s_geno)]
+dat = data.frame(sample = names(t_pudi), pudi = t_pudi, geno = factor(s_geno))
+
+dat %>%
+  ggplot(aes(x = geno, y = pudi)) +
+  stat_boxplot(geom = "errorbar", width = 0.2) +
+  geom_boxplot(width = .4, outlier.colour = "black", outlier.size = .5) +
+  stat_summary(fun=mean, geom="line", aes(group=1), colour="red", size=1) + 
+  stat_summary(fun=mean, geom="point", colour="red", size=1.5, shape = 15) +
+  geom_jitter_rast(position=position_jitter(0.2), size = .5,
+              dev = "ragg", raster.dpi = 600) +
+  stat_n_text() +
+  labs(x = "STR dosage", y = "Normalized PUDI",
+       title = paste(t, s, sep = " - "))
+```
+
+#### chr6:32622508
+
+ENST00000482745.5
+
+```{r fig.width=4, fig.height=4}
+s = "chr6:32622508"
+t = "ENST00000482745.5"
+s_geno = na.omit(unlist(str_geno[s, ]))
+t_pudi = rna_pudi[, t]
+names(t_pudi) = rownames(rna_pudi)
+t_pudi = t_pudi[names(s_geno)]
+dat = data.frame(sample = names(t_pudi), pudi = t_pudi, geno = factor(s_geno))
+
+dat %>%
+  ggplot(aes(x = geno, y = pudi)) +
+  stat_boxplot(geom = "errorbar", width = 0.2) +
+  geom_boxplot(width = .4, outlier.colour = "black", outlier.size = .5) +
+  stat_summary(fun=mean, geom="line", aes(group=1), colour="red", size=1) + 
+  stat_summary(fun=mean, geom="point", colour="red", size=1.5, shape = 15) +
+  geom_jitter_rast(position=position_jitter(0.2), size = .5,
+              dev = "ragg", raster.dpi = 600) +
+  stat_n_text() +
+  labs(x = "STR dosage", y = "Normalized PUDI",
+       title = paste(t, s, sep = " - "))
+```
+
+#### chr2:33537193
+
+ENST00000468856.1
+
+```{r fig.width=4, fig.height=4}
+s = "chr2:33537193"
+t = "ENST00000468856.1"
+s_geno = na.omit(unlist(str_geno[s, ]))
+t_pudi = rna_pudi[, t]
+names(t_pudi) = rownames(rna_pudi)
+t_pudi = t_pudi[names(s_geno)]
+dat = data.frame(sample = names(t_pudi), pudi = t_pudi, geno = factor(s_geno))
+
+dat %>%
+  ggplot(aes(x = geno, y = pudi)) +
+  stat_boxplot(geom = "errorbar", width = 0.2) +
+  geom_boxplot(width = .4, outlier.colour = "black", outlier.size = .5) +
+  stat_summary(fun=mean, geom="line", aes(group=1), colour="red", size=1) + 
+  stat_summary(fun=mean, geom="point", colour="red", size=1.5, shape = 15) +
+  geom_jitter_rast(position=position_jitter(0.2), size = .5,
+              dev = "ragg", raster.dpi = 600) +
+  stat_n_text() +
+  labs(x = "STR dosage", y = "Normalized PUDI",
+       title = paste(t, s, sep = " - "))
+```
+
+#### chr14:93201949
+
+ENST00000013070.11
+
+```{r fig.width=4, fig.height=4}
+s = "chr14:93201949"
+t = "ENST00000013070.11"
+s_geno = na.omit(unlist(str_geno[s, ]))
+t_pudi = rna_pudi[, t]
+names(t_pudi) = rownames(rna_pudi)
+t_pudi = t_pudi[names(s_geno)]
+dat = data.frame(sample = names(t_pudi), pudi = t_pudi, geno = factor(s_geno))
+
+dat %>%
+  ggplot(aes(x = geno, y = pudi)) +
+  stat_boxplot(geom = "errorbar", width = 0.2) +
+  geom_boxplot(width = .4, outlier.colour = "black", outlier.size = .5) +
+  stat_summary(fun=mean, geom="line", aes(group=1), colour="red", size=1) + 
+  stat_summary(fun=mean, geom="point", colour="red", size=1.5, shape = 15) +
+  geom_jitter_rast(position=position_jitter(0.2), size = .5,
+              dev = "ragg", raster.dpi = 600) +
+  stat_n_text() +
+  labs(x = "STR dosage", y = "Normalized PUDI",
+       title = paste(t, s, sep = " - "))
+```
+
+## Save
+
+```{r save, cache=FALSE, eval=FALSE}
+saveRDS(df.aSTR, file = here::here("output", DOCNAME, "df.aSTR.rds"))
+write_csv(df.aSTR, file = here::here("output", DOCNAME, "df.aSTR.csv"))
+```
+

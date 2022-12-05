@@ -1,0 +1,296 @@
+---
+title: "str_saturation"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME = "str_saturation"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+    if (before) {
+        print(paste("Start:", Sys.time()))
+        NOW <<- Sys.time()
+    } else {
+        print(paste("Stop:", Sys.time()))
+        print(Sys.time() - NOW)
+    }
+})
+
+knitr::opts_chunk$set(
+    autodep        = TRUE,
+    cache.lazy     = FALSE, 
+    cache.comments = FALSE,
+    echo           = TRUE,
+    error          = FALSE,
+    fig.align      = "center",
+    fig.width      = 10,
+    fig.height     = 8,
+    message        = FALSE,
+    warning        = FALSE,
+    timeit         = TRUE
+)
+```
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+geom.text.size <- 7
+
+# heatmap
+library(pheatmap)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+Load data (all)
+
+```{r load-all, warning=FALSE, message=FALSE}
+data_dir = '/niuyw-usb-disk/Projects/STR/str_stat/str_saturation'
+
+sat_pSTR = read_csv(file.path(data_dir, 'str_saturation.pSTR.csv'), col_names = F)
+sat_common = read_csv(file.path(data_dir, 'str_saturation.commonSTR.csv'), col_names = F)
+sat_rare = read_csv(file.path(data_dir, 'str_saturation.rareSTR.csv'), col_names = F)
+sat_vrare = read_csv(file.path(data_dir, 'str_saturation.veryrareSTR.csv'), col_names = F)
+```
+
+Load data (NyuWa)
+
+```{r load-all-NyuWa, warning=FALSE, message=FALSE}
+sat_pSTR.NyuWa = read_csv(file.path(data_dir, 'str_saturation.NyuWa.pSTR.csv'), col_names = F)
+sat_common.NyuWa = read_csv(file.path(data_dir, 'str_saturation.NyuWa.commonSTR.csv'), col_names = F)
+sat_rare.NyuWa = read_csv(file.path(data_dir, 'str_saturation.NyuWa.rareSTR.csv'), col_names = F)
+sat_vrare.NyuWa = read_csv(file.path(data_dir, 'str_saturation.NyuWa.veryrareSTR.csv'), col_names = F)
+```
+
+Load data (1KGP)
+
+```{r load-all-1KGP, warning=FALSE, message=FALSE}
+sat_pSTR.1KGP = read_csv(file.path(data_dir, 'str_saturation.1KGP.pSTR.csv'), col_names = F)
+sat_common.1KGP = read_csv(file.path(data_dir, 'str_saturation.1KGP.commonSTR.csv'), col_names = F)
+sat_rare.1KGP = read_csv(file.path(data_dir, 'str_saturation.1KGP.rareSTR.csv'), col_names = F)
+sat_vrare.1KGP = read_csv(file.path(data_dir, 'str_saturation.1KGP.veryrareSTR.csv'), col_names = F)
+```
+
+## Neat data
+
+Function
+
+```{r, neat-func}
+neat_sat_dat <- function(tb=NULL, alt_type=NULL, tot_n=NULL) {
+  a = apply(tb, 1, FUN = function(x) {x = as.numeric(x); quantile(x, probs = seq(0, 1, 0.1))})
+  df = data.frame(cut = c(0, seq(100, tot_n, 100), tot_n),
+                  num = c(0, a['50%',]),
+                  lower = c(0, a['10%',]),
+                  upper = c(0, a['90%',]),
+                  alt_type = alt_type)
+  return(df)
+}
+```
+
+All
+
+```{r Saturation-curve-neat}
+sat_pSTR = neat_sat_dat(sat_pSTR, 'pSTR', tot_n=6487)
+sat_common = neat_sat_dat(sat_common, 'common', tot_n=6487)
+sat_rare = neat_sat_dat(sat_rare, 'rare', tot_n=6487)
+sat_vrare = neat_sat_dat(sat_vrare, 'veryRare', tot_n=6487)
+
+df = sat_pSTR %>%
+  bind_rows(sat_common) %>%
+  bind_rows(sat_rare) %>%
+  bind_rows(sat_vrare) %>%
+  mutate(alt_type = factor(alt_type, levels = c('pSTR', 'common', 'rare', 'veryRare')))
+```
+
+NyuWa
+
+```{r neat-NyuWa}
+sat_pSTR.NyuWa = neat_sat_dat(sat_pSTR.NyuWa, 'pSTR', tot_n=3983)
+sat_common.NyuWa = neat_sat_dat(sat_common.NyuWa, 'common', tot_n=3983)
+sat_rare.NyuWa = neat_sat_dat(sat_rare.NyuWa, 'rare', tot_n=3983)
+sat_vrare.NyuWa = neat_sat_dat(sat_vrare.NyuWa, 'veryRare', tot_n=3983)
+
+df.NyuWa = sat_pSTR.NyuWa %>%
+  bind_rows(sat_common.NyuWa) %>%
+  bind_rows(sat_rare.NyuWa) %>%
+  bind_rows(sat_vrare.NyuWa) %>%
+  mutate(alt_type = factor(alt_type, levels = c('pSTR', 'common', 'rare', 'veryRare')))
+```
+
+1KGP
+
+```{r neat-1KGP}
+sat_pSTR.1KGP = neat_sat_dat(sat_pSTR.1KGP, 'pSTR', tot_n=2504)
+sat_common.1KGP = neat_sat_dat(sat_common.1KGP, 'common', tot_n=2504)
+sat_rare.1KGP = neat_sat_dat(sat_rare.1KGP, 'rare', tot_n=2504)
+sat_vrare.1KGP = neat_sat_dat(sat_vrare.1KGP, 'veryRare', tot_n=2504)
+
+df.1KGP = sat_pSTR.1KGP %>%
+  bind_rows(sat_common.1KGP) %>%
+  bind_rows(sat_rare.1KGP) %>%
+  bind_rows(sat_vrare.1KGP) %>%
+  mutate(alt_type = factor(alt_type, levels = c('pSTR', 'common', 'rare', 'veryRare')))
+```
+
+## Plot {.tabset}
+
+### All
+
+```{r Saturation-curve-plot, fig.width=4, fig.height=3}
+p.all = df %>%
+  #filter(cut != 0) %>%
+  ggplot(aes(x = cut, y = num, fill = alt_type, color = alt_type)) +
+  geom_line() +
+  geom_ribbon(aes(ymin=lower, ymax=upper, color=NULL, fill=alt_type), alpha=.5) +
+  geom_vline(xintercept = c(100), linetype = "dashed", color = '#d6d6d6') +
+  scale_fill_jco() +
+  scale_color_jco() +
+  scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                labels = trans_format("log10", math_format(10^.x))) +
+  scale_x_continuous(expand = c(0, 0), labels = label_comma()) +
+  labs(x="# of samples", y="# of loci", fill = "Type", color = "Type") +
+  theme(legend.position = c(0.75, 0.2))
+p.all
+
+ggsave(p.all, filename = here::here("output", DOCNAME, "Fig.str_sat.ALL.pdf"),
+       height = 3, width = 4)
+saveRDS(p.all, file = here::here("output", DOCNAME, "Fig.str_sat.ALL.rds"))
+```
+
+### NyuWa
+
+```{r Saturation-curve-plot-NyuWa, fig.width=4, fig.height=3}
+p.NyuWa = df.NyuWa %>%
+  #filter(cut != 0) %>%
+  ggplot(aes(x = cut, y = num, fill = alt_type, color = alt_type)) +
+  geom_line() +
+  geom_ribbon(aes(ymin=lower, ymax=upper, color=NULL, fill=alt_type), alpha=.5) +
+  geom_vline(xintercept = c(100), linetype = "dashed", color = '#d6d6d6') +
+  scale_fill_jco() +
+  scale_color_jco() +
+  scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                labels = trans_format("log10", math_format(10^.x))) +
+  scale_x_continuous(expand = c(0, 0), labels = label_comma()) +
+  labs(x="# of samples", y="# of loci", fill = "Type", color = "Type") +
+  theme(legend.position = c(0.75, 0.2))
+p.NyuWa
+
+ggsave(p.NyuWa, filename = here::here("output", DOCNAME, "Fig.str_sat.NyuWa.pdf"),
+       height = 3, width = 4)
+saveRDS(p.NyuWa, file = here::here("output", DOCNAME, "Fig.str_sat.NyuWa.rds"))
+```
+
+### 1KGP
+
+```{r Saturation-curve-plot-1KGP, fig.width=4, fig.height=3}
+p.1KGP = df.1KGP %>%
+  #filter(cut != 0) %>%
+  ggplot(aes(x = cut, y = num, fill = alt_type, color = alt_type)) +
+  geom_line() +
+  geom_ribbon(aes(ymin=lower, ymax=upper, color=NULL, fill=alt_type), alpha=.5) +
+  geom_vline(xintercept = c(100), linetype = "dashed", color = '#d6d6d6') +
+  scale_fill_jco() +
+  scale_color_jco() +
+  scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                labels = trans_format("log10", math_format(10^.x))) +
+  scale_x_continuous(expand = c(0, 0), labels = label_comma()) +
+  labs(x="# of samples", y="# of loci", fill = "Type", color = "Type") +
+  theme(legend.position = c(0.75, 0.2))
+p.1KGP
+
+ggsave(p.1KGP, filename = here::here("output", DOCNAME, "Fig.str_sat.1KGP.pdf"),
+       height = 3, width = 4)
+saveRDS(p.1KGP, file = here::here("output", DOCNAME, "Fig.str_sat.1KGP.rds"))
+```
+
+### Combine
+
+```{r fig.width=4, fig.height=3}
+a = df %>% filter(alt_type == "pSTR") %>% mutate(dataset = 'All')
+b = df.NyuWa %>% filter(alt_type == "pSTR") %>% mutate(dataset = 'NyuWa')
+d = df.1KGP %>% filter(alt_type == "pSTR") %>% mutate(dataset = '1KGP')
+
+e = rbind(a, b, d) %>%
+  mutate(dataset = factor(dataset, levels = c("All", "1KGP", "NyuWa")))
+
+p.str_sat = e %>%
+  ggplot(aes(x = cut, y = num, fill = dataset, color = dataset)) +
+  geom_line() +
+  geom_ribbon(aes(ymin=lower, ymax=upper, color=NULL, fill=dataset), alpha=.5) +
+  scale_fill_jco() +
+  scale_color_jco() +
+  scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                labels = trans_format("log10", math_format(10^.x))) +
+  scale_x_continuous(expand = c(0, 0), labels = label_comma()) +
+  labs(x="# of samples", y="# of loci", fill = "Type", color = "Type") +
+  theme(legend.position = c(0.75, 0.2))
+p.str_sat
+
+ggsave(p.str_sat, filename = here::here("output", DOCNAME, "Fig.str_sat.main.pdf"),
+       height = 3, width = 4)
+saveRDS(p.str_sat, file = here::here("output", DOCNAME, "Fig.str_sat.main.rds"))
+```
+
+## Align plots
+
+Main
+
+```{r fig.width=4, fig.height=3}
+p.str_sat
+```
+
+Supp
+
+```{r fig.width=7.5, fig.height=3}
+p.str_sat_supp = p.NyuWa + p.1KGP +
+  plot_layout(ncol = 2)
+p.str_sat_supp
+
+ggsave(p.str_sat_supp, filename = here::here("output", DOCNAME, "Fig.str_sat.supp.pdf"),
+       height = 3, width = 7.5)
+saveRDS(p.str_sat_supp, file = here::here("output", DOCNAME, "Fig.str_sat.supp.rds"))
+```
+
+## Save
+
+```{r save, cache=FALSE}
+saveRDS(df, file = here::here("output", DOCNAME, "df.Merged.rds"))
+saveRDS(df.NyuWa, file = here::here("output", DOCNAME, "df.NyuWa.rds"))
+saveRDS(df.1KGP, file = here::here("output", DOCNAME, "df.1KGP.rds"))
+```
+
+## Session info
+

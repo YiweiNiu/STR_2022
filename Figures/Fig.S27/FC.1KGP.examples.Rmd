@@ -1,0 +1,354 @@
+---
+title: "FC.1KGP.examples"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "FC.1KGP.examples"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(ggbeeswarm)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+geom.text.size <- 7
+
+# volcano
+# library(EnhancedVolcano)
+
+# heatmap
+library(pheatmap)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+## Load data
+
+Load sample info
+
+```{r load-sam-info, cache=FALSE, message=FALSE, warning=FALSE}
+sam_info <- read_tsv(here::here("data", "220116_sample_info.GangSTR.txt")) %>%
+  filter(dataset == "1KGP") %>%
+  dplyr::select(sam = sample_old, spop = super_pop, pop) %>%
+  mutate(spop = factor(spop, levels = c("AMR", "AFR", "EUR", "EAS", "SAS")))
+```
+
+## Plot
+
+The function
+
+```{r}
+get_d4p <- function(s = NULL,
+                    sam_info = NULL,
+                    data_dir = "/T02Data/niuyw/niuyw-usb-disk/Projects/STR/fold_change/STR_len_mat") {
+  chrom <- str_split(s, ":", simplify = TRUE)[1]
+  mat <- read_csv(file.path(data_dir, paste0(chrom, ".str_len.csv.gz"))) %>%
+    column_to_rownames("site") %>%
+    as.data.frame()
+  s_len <- na.omit(unlist(mat[s, ]))
+  df <- data.frame(sam = names(s_len), len = s_len) %>%
+    left_join(sam_info, by = "sam") %>%
+    filter(!is.na(spop))
+  return(df)
+}
+
+plot_site_dis <- function(dat = NULL, gene = NULL) {
+  p1 <- dat %>%
+    ggplot(aes(x = spop, y = jitter(len))) +
+    geom_quasirandom_rast(
+      raster.dpi = 300,
+      method = "smiley",
+      color = "#909090",
+      size = .1
+    ) +
+    stat_summary(fun.data = mean_sdl, geom = "errorbar", width = 0.5) +
+    stat_summary(fun = mean, geom = "crossbar", width = 0.8, size = 0.2) +
+    labs(
+      x = NULL, y = "# of repeat unit",
+      title = gene
+    ) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+
+  p2 <- dat %>%
+    group_by(spop, len) %>%
+    summarise(n = n()) %>%
+    ggplot(aes(x = len, y = n, fill = spop)) +
+    geom_col() +
+    scale_y_continuous(expand = c(0, 0)) +
+    scale_fill_manual(values = pop_color_maps) +
+    labs(
+      x = "# of repeat unit", y = "Combined abundance",
+      fill = NULL
+    ) +
+    theme(legend.position = c(.6, .8))
+
+  p.site <- plot_grid(p1, p2, nrow = 1, rel_widths = c(1.5, 2.25))
+  p.site
+}
+```
+
+### UBE2L3, chr22:21598196
+
+```{r, message=FALSE, warning=FALSE, fig.width=3.75, fig.height=2.2}
+s <- "chr22:21598196"
+g <- "UBE2L3"
+df <- get_d4p(s, sam_info)
+
+# aov
+fit = aov(len ~ spop, data = df)
+summary(fit)
+TukeyHSD(fit)
+
+p.UBE2L3 = plot_site_dis(df, g)
+p.UBE2L3
+```
+
+### DHTKD1, chr10:12072462
+
+```{r, message=FALSE, warning=FALSE, fig.width=3.75, fig.height=2.2}
+s <- "chr10:12072462"
+g <- "DHTKD1"
+df <- get_d4p(s, sam_info)
+
+# aov
+fit = aov(len ~ spop, data = df)
+summary(fit)
+TukeyHSD(fit)
+
+p.DHTKD1 = plot_site_dis(df, g)
+p.DHTKD1
+```
+
+### NR3C2, chr4:148356900
+
+```{r, message=FALSE, warning=FALSE, fig.width=3.75, fig.height=2.2}
+s <- "chr4:148356900"
+g <- "NR3C2"
+df <- get_d4p(s, sam_info)
+
+# aov
+fit = aov(len ~ spop, data = df)
+summary(fit)
+TukeyHSD(fit)
+
+p.NR3C2 = plot_site_dis(df, g)
+p.NR3C2
+```
+
+### MYPN, chr10:68193798
+
+```{r, message=FALSE, warning=FALSE, fig.width=3.75, fig.height=2.2}
+s <- "chr10:68193798"
+g <- "MYPN"
+df <- get_d4p(s, sam_info)
+
+# aov
+fit = aov(len ~ spop, data = df)
+summary(fit)
+TukeyHSD(fit)
+
+p.MYPN = plot_site_dis(df, g)
+p.MYPN
+```
+
+### ACYP2, chr2:54201583
+
+```{r, message=FALSE, warning=FALSE, fig.width=3.75, fig.height=2.2}
+s <- "chr2:54201583"
+g <- "ACYP2"
+df <- get_d4p(s, sam_info)
+
+# aov
+fit = aov(len ~ spop, data = df)
+summary(fit)
+TukeyHSD(fit)
+
+p.ACYP2 = plot_site_dis(df, g)
+p.ACYP2
+```
+
+### WWOX, chr16:78417041
+
+```{r, message=FALSE, warning=FALSE, fig.width=3.75, fig.height=2.2}
+s <- "chr16:78417041"
+g <- "WWOX"
+df <- get_d4p(s, sam_info)
+
+# aov
+fit = aov(len ~ spop, data = df)
+summary(fit)
+TukeyHSD(fit)
+
+p.WWOX = plot_site_dis(df, g)
+p.WWOX
+```
+
+### MACROD2, chr20:15846912
+
+```{r, message=FALSE, warning=FALSE, fig.width=3.75, fig.height=2.2}
+s <- "chr20:15846912"
+g <- "MACROD2"
+df <- get_d4p(s, sam_info)
+
+# aov
+fit = aov(len ~ spop, data = df)
+summary(fit)
+TukeyHSD(fit)
+
+p.MACROD2 = plot_site_dis(df, g)
+p.MACROD2
+```
+
+### DOK6, chr18:69611496
+
+```{r, message=FALSE, warning=FALSE, fig.width=3.75, fig.height=2.2}
+s <- "chr18:69611496"
+g <- "DOK6"
+df <- get_d4p(s, sam_info)
+
+# aov
+fit = aov(len ~ spop, data = df)
+summary(fit)
+TukeyHSD(fit)
+
+p.DOK6 = plot_site_dis(df, g)
+p.DOK6
+```
+
+### RASGRF1, chr15:79078133
+
+```{r, message=FALSE, warning=FALSE, fig.width=3.75, fig.height=2.2}
+s <- "chr15:79078133"
+g <- "RASGRF1"
+df <- get_d4p(s, sam_info)
+
+# aov
+fit = aov(len ~ spop, data = df)
+summary(fit)
+TukeyHSD(fit)
+
+p.RASGRF1 = plot_site_dis(df, g)
+p.RASGRF1
+```
+
+### MGAT5, chr2:134330555
+
+```{r, message=FALSE, warning=FALSE, fig.width=3.75, fig.height=2.2}
+s <- "chr2:134330555"
+g <- "MGAT5"
+df <- get_d4p(s, sam_info)
+
+# aov
+fit = aov(len ~ spop, data = df)
+summary(fit)
+TukeyHSD(fit)
+
+p.MGAT5 = plot_site_dis(df, g)
+p.MGAT5
+```
+
+### FCN1, chr9:134905784
+
+```{r, message=FALSE, warning=FALSE, fig.width=3.75, fig.height=2.2}
+s <- "chr9:134905784"
+g <- "FCN1"
+df <- get_d4p(s, sam_info)
+
+# aov
+fit = aov(len ~ spop, data = df)
+summary(fit)
+TukeyHSD(fit)
+
+p.FCN1 = plot_site_dis(df, g)
+p.FCN1
+```
+
+### PCNX2, chr1:233017179
+
+```{r, message=FALSE, warning=FALSE, fig.width=3.75, fig.height=2.2}
+s <- "chr1:233017179"
+g <- "PCNX2"
+df <- get_d4p(s, sam_info)
+
+# aov
+fit = aov(len ~ spop, data = df)
+summary(fit)
+TukeyHSD(fit)
+
+p.PCNX2 = plot_site_dis(df, g)
+p.PCNX2
+```
+
+## Align plots
+
+```{r fig.width=7.5, fig.height=4.4}
+p <- p.UBE2L3 + p.DHTKD1 +
+  p.MYPN + p.MGAT5 +
+  plot_layout(nrow = 2, ncol = 2)
+p
+
+ggsave2(p,
+  filename = here::here("output", DOCNAME, "Fig.FC_1KGP_spops_examples.pdf"),
+  height = 4.4, width = 7.5
+)
+saveRDS(p, file = here::here("output", DOCNAME, "Fig.FC_1KGP_spops_examples.rds"))
+```
+
+## Session info

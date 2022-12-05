@@ -1,0 +1,37 @@
+#!/bin/bash
+#PBS -V
+#PBS -j eo
+#PBS -N str_saturation.1KGP
+#PBS -q Fat
+#PBS -l nodes=1:ppn=1
+#PBS -d /home2/niuyw/project/STR/str_stat/str_saturation
+
+# WORK DIR
+WORKDIR=/home2/niuyw/project/STR/str_stat/str_saturation
+
+# PPN
+PPN=1
+
+# genome and annotations
+ANNODIR=/home2/niuyw/RefData
+GRCh38_REFERENCE=$ANNODIR/Homo_sapiens/GRCh38_no_alt/genome.fa
+GRCh38_GTF=$ANNODIR/Homo_sapiens/GENCODE_v27/gencode.v27.annotation.gtf
+GRCh38_bowtie2=$ANNODIR/Homo_sapiens/GRCh38_no_alt/Bowtie2Index/GRCh38_no_alt
+GRCh38_STAR=$ANNODIR/Homo_sapiens/GRCh38_no_alt/STARgenomes
+
+# tools dir
+TOOLDIR=/home2/niuyw/software
+path2java=$TOOLDIR/jdk1.8.0_311/bin/java
+path2bedtools=$TOOLDIR/bedtools2/bin/bedtools
+path2samtools=$TOOLDIR/samtools.1.9/bin/samtools
+path2bcftools=$TOOLDIR/bcftools-1.14/bcftools
+path2picard=$TOOLDIR/picard-2.9.2/picard.jar
+
+echo Start time is `date +%Y/%m/%d--%H:%M`
+
+vcf_dir=/home2/niuyw/project/STR/02_FilteredRaw220116_1KGP
+
+python str_saturation.py -t 2504 -i $vcf_dir/chr*.vcf.gz -o str_saturation.1KGP
+
+echo Finish time is `date +%Y/%m/%d--%H:%M`
+

@@ -1,0 +1,174 @@
+---
+title: "aSTR.examples"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "aSTR.examples"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+- Plot some examples of aSTRs
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggbeeswarm)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+geom.text.size <- 7
+
+# heatmap
+library(pheatmap)
+library(corrplot)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+## Load data
+
+Load pudi
+
+```{r load-pudi, cache=FALSE, warning=FALSE, message=FALSE}
+rna_pudi <- readRDS(here::here("output", "aSTR.preprocess_pudi", "Geuvadis.pudi_adjusted.rds"))
+rna_pudi[1:3, 1:3]
+```
+
+Load STR geno
+
+```{r load-STR-geno, cache=FALSE, warning=FALSE, message=FALSE}
+str_geno = read_csv("/niuyw-usb-disk/Projects/STR/eSTR/Geuvadis_445.str_geno.csv") %>%
+  column_to_rownames("site")
+str_geno[1:3, 1:3]
+```
+
+Load eSTR result
+
+```{r load-eSTR-res, message=FALSE, warning=FALSE, cache=FALSE}
+df.aSTR = readRDS(here::here("output/aSTR.identification", "df.aSTR.rds"))
+```
+
+## Show top 100
+
+```{r show-top}
+DT::datatable(head(df.aSTR, 100), filter = "top")
+```
+
+## Plot
+
+```{r common-func}
+plot_str_geno_pudi <- function(geno_dat=NULL, pudi_dat=NULL,
+                              s=NULL, t=NULL, g_name = NULL) {
+  s_geno = na.omit(unlist(geno_dat[s, ]))
+  t_pudi = pudi_dat[, t]
+  names(t_pudi) = rownames(pudi_dat)
+  t_pudi = t_pudi[names(s_geno)]
+  dat = data.frame(sample = names(t_pudi), pudi = t_pudi, geno = factor(s_geno))
+  # remove transcript version
+  t = str_split(t, "[.]", simplify = TRUE)[,1]
+  p = dat %>%
+    ggplot(aes(x = geno, y = pudi)) +
+    stat_boxplot(geom = "errorbar", width = 0.2) +
+    geom_boxplot(width = .5, outlier.colour = "black", outlier.size = .5) +
+    geom_jitter_rast(position=position_jitter(0.15), size = .2,
+                dev = "ragg", raster.dpi = 600) +
+    stat_summary(fun=mean, geom="line", aes(group=1), colour="red", size=1) + 
+    stat_summary(fun=mean, geom="point", colour="red", size=1.5, shape = 15) +
+    stat_n_text() +
+    labs(x = "STR dosage", y = "Normalized PUDI",
+         title = paste(paste0(t, paste0(" (", g_name)), s, sep = ")\n"))
+  return(p)
+}
+```
+
+## Supp.
+
+Test
+
+```{r fig.width=3, fig.height=3.5}
+s = "chr16:89551066"
+t = "ENST00000472354.1"
+g_name = "PILRB"
+
+p.PILRB = plot_str_geno_pudi(str_geno, rna_pudi, s, t, g_name)
+p.PILRB
+```
+
+Plot
+
+```{r fig.width=7.5, fig.height=8.5}
+supp_loci = list(
+  c("chr2:33537193", "ENST00000468856.1", "RASGRP3"), # intron
+  c("chr22:26523191", "ENST00000338754.9", "TPST2"), # UTR3
+  c("chr15:60415754", "ENST00000558121.5", "ICE2"), # intergenic
+  c("chr5:146143112", "ENST00000394434.7", "LARS1"), # intron
+  c("chr19:7686514", "ENST00000598803.5", "FCER2"), 
+  c("chr2:207612458", "ENST00000411432.5", "METTL21A"), # down
+  c("chr18:63967143", "ENST00000408945.5", "HMSD"), # intron
+  c("chr20:35545567", "ENST00000279052.10", "ERGIC3"), # intron
+  c("chr7:100359506", "ENST00000493091.5", "PILRB") # CDS
+)
+
+p = lapply(supp_loci, function(x){
+  plot_str_geno_pudi(str_geno, rna_pudi, x[1], x[2], x[3])
+}) %>%
+  wrap_plots(ncol = 3)
+p
+
+ggsave2(p, filename = here::here("output", DOCNAME, "Fig.aSTR_examples.pdf"),
+        height = 8.5, width = 7.5)
+saveRDS(p, file = here::here("output", DOCNAME, "Fig.aSTR_examples.rds"))
+```
+
+## Session info

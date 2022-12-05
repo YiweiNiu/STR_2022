@@ -1,0 +1,322 @@
+---
+title: "dsb_prdm9"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "dsb_prdm9"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(corrplot)
+library(ggcorrplot)
+library(ggpmisc)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+
+# cmplot
+library(CMplot)
+
+# heatmap
+library(pheatmap)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+## Load data
+
+pSTR
+
+```{r load-pSTR, message=FALSE, warning=FALSE}
+data_dir <- "/niuyw-usb-disk/Projects/STR/genomic_features_1Mb"
+
+pSTR <- read_tsv(file.path(data_dir, "pSTR.count"),
+  col_names = FALSE,
+  col_types = cols(
+    X1 = "c", X2 = "c", X3 = "c",
+    X4 = "d", X5 = "d", X6 = "d", X7 = "d", X8 = "d", X9 = "d"
+  )
+) %>%
+  tidyr::unite("region", c("X1", "X2", "X3"), sep = ":") %>%
+  dplyr::rename(pSTR = X4, pSTR.period_2 = X5, pSTR.period_3 = X6,
+                pSTR.period_4 = X7, pSTR.period_5 = X8, pSTR.period_6 = X9)
+```
+
+mSTR
+
+```{r load-mSTR, message=FALSE, warning=FALSE}
+mSTR <- read_tsv(file.path(data_dir, "npSTR.count"),
+  col_names = FALSE,
+  col_types = cols(
+    X1 = "c", X2 = "c", X3 = "c",
+    X4 = "d", X5 = "d", X6 = "d", X7 = "d", X8 = "d", X9 = "d"
+  )
+) %>%
+  tidyr::unite("region", c("X1", "X2", "X3"), sep = ":") %>%
+  dplyr::rename(mSTR = X4, mSTR.period_2 = X5, mSTR.period_3 = X6,
+                mSTR.period_4 = X7, mSTR.period_5 = X8, mSTR.period_6 = X9)
+```
+
+DSB PRDM9
+
+```{r load-DSB, message=FALSE, warning=FALSE}
+dsb = read_tsv("/niuyw-usb-disk/Projects/STR/DSB_PRDM9/DSB_PRDM9.bin_count",
+               col_names = FALSE,
+               col_types = cols(X1 = "c", X2 = "c", X3 = "c", X4 = "d")) %>%
+  tidyr::unite("region", c("X1", "X2", "X3"), sep = ":") %>%
+  dplyr::rename(DSB = X4)
+
+head(dsb)
+```
+
+## Neat
+
+pSTR and DSB
+
+```{r}
+d4p.pSTR <- pSTR %>%
+  left_join(dsb, by = "region")
+d4p.pSTR <- na.omit(d4p.pSTR)
+```
+
+mSTR and DSB
+
+```{r}
+d4p.mSTR <- mSTR %>%
+  left_join(dsb, by = "region")
+d4p.mSTR <- na.omit(d4p.mSTR)
+```
+
+## Plot
+
+pSTR
+
+```{r fig.width=7, fig.height=4.5}
+p1 = d4p.pSTR %>%
+  ggplot(aes(x = pSTR, y = DSB)) +
+  geom_point_rast(size = .2, raster.dpi = 300) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_correlation(size = 8/(14/5),
+                   label.x = "right",
+                   aes(label = paste(after_stat(cor.label),
+                                     after_stat(p.value.label),
+                                     sep = '*"; "*'))) +
+  labs(x = NULL,
+       y = "Double-strand breaks count (1 Mbp)",
+       title = "All")
+p2 = d4p.pSTR %>%
+  ggplot(aes(x = pSTR.period_2, y = DSB)) +
+  geom_point_rast(size = .2, raster.dpi = 300) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_correlation(size = 8/(14/5),
+                   label.x = "right",
+                   aes(label = paste(after_stat(cor.label),
+                                     after_stat(p.value.label),
+                                     sep = '*"; "*'))) +
+  labs(x = NULL,
+       y = NULL,
+       title = "Period 2")
+p3 = d4p.pSTR %>%
+  ggplot(aes(x = pSTR.period_3, y = DSB)) +
+  geom_point_rast(size = .2, raster.dpi = 300) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_correlation(size = 8/(14/5),
+                   label.x = "right",
+                   aes(label = paste(after_stat(cor.label),
+                                     after_stat(p.value.label),
+                                     sep = '*"; "*'))) +
+  labs(x = NULL,
+       y = NULL,
+       title = "Period 3")
+p4 = d4p.pSTR %>%
+  ggplot(aes(x = pSTR.period_4, y = DSB)) +
+  geom_point_rast(size = .2, raster.dpi = 300) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_correlation(size = 8/(14/5),
+                   label.x = "right",
+                   aes(label = paste(after_stat(cor.label),
+                                     after_stat(p.value.label),
+                                     sep = '*"; "*'))) +
+  labs(x = NULL,
+       y = NULL,
+       title = "Period 4")
+p5 = d4p.pSTR %>%
+  ggplot(aes(x = pSTR.period_5, y = DSB)) +
+  geom_point_rast(size = .2, raster.dpi = 300) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_correlation(size = 8/(14/5),
+                   label.x = "right",
+                   aes(label = paste(after_stat(cor.label),
+                                     after_stat(p.value.label),
+                                     sep = '*"; "*'))) +
+  labs(x = "pSTR count (1 Mbp)",
+       y = NULL,
+       title = "Period 5")
+p6 = d4p.pSTR %>%
+  ggplot(aes(x = pSTR.period_6, y = DSB)) +
+  geom_point_rast(size = .2, raster.dpi = 300) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_correlation(size = 8/(14/5),
+                   label.x = "right",
+                   aes(label = paste(after_stat(cor.label),
+                                     after_stat(p.value.label),
+                                     sep = '*"; "*'))) +
+  labs(x = NULL,
+       y = NULL,
+       title = "Period 6")
+
+p.pstr = p1 + p2 + p3 + p4 + p5 + p6 +
+  plot_layout(ncol = 3)
+p.pstr
+```
+
+mSTR
+
+```{r fig.width=7, fig.height=4.5}
+p1 = d4p.mSTR %>%
+  ggplot(aes(x = mSTR, y = DSB)) +
+  geom_point_rast(size = .2, raster.dpi = 300) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_correlation(size = 8/(14/5),
+                   label.x = "right",
+                   aes(label = paste(after_stat(cor.label),
+                                     after_stat(p.value.label),
+                                     sep = '*"; "*'))) +
+  labs(x = NULL,
+       y = "Double-strand breaks count (1 Mbp)",
+       title = "All")
+p2 = d4p.mSTR %>%
+  ggplot(aes(x = mSTR.period_2, y = DSB)) +
+  geom_point_rast(size = .2, raster.dpi = 300) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_correlation(size = 8/(14/5),
+                   label.x = "right",
+                   aes(label = paste(after_stat(cor.label),
+                                     after_stat(p.value.label),
+                                     sep = '*"; "*'))) +
+  labs(x = NULL,
+       y = NULL,
+       title = "Period 2")
+p3 = d4p.mSTR %>%
+  ggplot(aes(x = mSTR.period_3, y = DSB)) +
+  geom_point_rast(size = .2, raster.dpi = 300) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_correlation(size = 8/(14/5),
+                   label.x = "right",
+                   aes(label = paste(after_stat(cor.label),
+                                     after_stat(p.value.label),
+                                     sep = '*"; "*'))) +
+  labs(x = NULL,
+       y = NULL,
+       title = "Period 3")
+p4 = d4p.mSTR %>%
+  ggplot(aes(x = mSTR.period_4, y = DSB)) +
+  geom_point_rast(size = .2, raster.dpi = 300) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_correlation(size = 8/(14/5),
+                   label.x = "right",
+                   aes(label = paste(after_stat(cor.label),
+                                     after_stat(p.value.label),
+                                     sep = '*"; "*'))) +
+  labs(x = NULL,
+       y = NULL,
+       title = "Period 4")
+p5 = d4p.mSTR %>%
+  ggplot(aes(x = mSTR.period_5, y = DSB)) +
+  geom_point_rast(size = .2, raster.dpi = 300) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_correlation(size = 8/(14/5),
+                   label.x = "right",
+                   aes(label = paste(after_stat(cor.label),
+                                     after_stat(p.value.label),
+                                     sep = '*"; "*'))) +
+  labs(x = "mSTR count (1 Mbp)",
+       y = NULL,
+       title = "Period 5")
+p6 = d4p.mSTR %>%
+  ggplot(aes(x = mSTR.period_6, y = DSB)) +
+  geom_point_rast(size = .2, raster.dpi = 300) +
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_correlation(size = 8/(14/5),
+                   label.x = "right",
+                   aes(label = paste(after_stat(cor.label),
+                                     after_stat(p.value.label),
+                                     sep = '*"; "*'))) +
+  labs(x = NULL,
+       y = NULL,
+       title = "Period 6")
+
+p.mstr = p1 + p2 + p3 + p4 + p5 + p6 +
+  plot_layout(ncol = 3)
+p.mstr
+```
+
+Align
+
+```{r fig.width=7, fig.height=9}
+p = p.pstr/p.mstr
+p
+
+ggsave2(p, filename = here::here("output", DOCNAME, "Fig.STR_cor_DSB.pdf"),
+        height = 9, width = 7)
+```
+
+## Session info
+
+

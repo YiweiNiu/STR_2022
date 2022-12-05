@@ -1,0 +1,206 @@
+---
+title: "EH.repeat_distribution"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "EH.repeat_distribution"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+绘制 repeat distribution，并且与之前的数据进行比较
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggbeeswarm)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # axis.title
+  rel_small = 10 / 10, # axis.text
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+))
+
+# heatmap
+library(pheatmap)
+library(corrplot)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+## Load data
+
+Load loci
+
+```{r load-loci, cache=FALSE, warning=FALSE, message=FALSE}
+eh_loci = read_tsv("/niuyw-usb-disk/Projects/STR/ExpansionHunter/variant_catalog.bed")
+colnames(eh_loci)[1] = 'Chrom'
+head(eh_loci)
+```
+
+NyuWa
+
+```{r load-repeat-dis-nyuwa, cache=FALSE, message=FALSE, warning=FALSE}
+df.nyuwa = read_tsv("/niuyw-usb-disk/Projects/STR/ExpansionHunter/sam6487.allele_distribution.txt") %>%
+  filter(Locus %in% eh_loci$LocusId)
+head(df.nyuwa)
+```
+
+STRipy
+
+```{r load-repeat-dis-STRipy, cache=FALSE, message=FALSE, warning=FALSE}
+df.stripy = read_tsv("/niuyw-usb-disk/Projects/STR/ExpansionHunter/STRipy.allele_distribution.txt") %>%
+  filter(Locus %in% eh_loci$LocusId)
+```
+
+gnomAD
+
+```{r load-repeat-dis-gnomAD, cache=FALSE, message=FALSE, warning=FALSE}
+df.gnomAD = read_tsv("/niuyw-usb-disk/Projects/STR/ExpansionHunter/gnomAD.allele_distribution.txt") %>%
+  filter(Locus %in% eh_loci$LocusId)
+```
+
+## Neat
+
+```{r neat}
+# Nyuwa
+tmp_lst = lapply(unique(df.nyuwa$Locus), function(x){
+  df = df.nyuwa %>% filter(Locus == x)
+  data.frame(value = rep(df$Repeat, df$Count),
+           Locus = x,
+           Source = "NyuWa")
+})
+d4p.nyuwa = do.call(rbind, tmp_lst)
+
+# STRipy
+tmp_lst = lapply(unique(df.stripy$Locus), function(x){
+  df = df.stripy %>% filter(Locus == x)
+  data.frame(value = rep(df$Repeat, df$Count),
+           Locus = x,
+           Source = "STRipy")
+})
+d4p.stripy = do.call(rbind, tmp_lst)
+
+# gnomAD
+tmp_lst = lapply(unique(df.gnomAD$Locus), function(x){
+  df = df.gnomAD %>% filter(Locus == x)
+  data.frame(value = rep(df$Repeat, df$Count),
+           Locus = x,
+           Source = "gnomAD")
+})
+d4p.gnomAD = do.call(rbind, tmp_lst)
+
+# common loci
+common_loci = intersect(intersect(df.nyuwa$Locus, df.stripy$Locus), df.gnomAD$Locus)
+common_loci = sort(common_loci)
+
+# merge
+d4p = rbind(d4p.nyuwa, d4p.stripy, d4p.gnomAD) %>%
+  filter(Locus %in% common_loci) %>%
+  mutate(Source = factor(Source, levels = c("STRipy", "gnomAD", "NyuWa")))
+
+head(d4p)
+```
+
+## Plot
+
+Test
+
+```{r plot-test, fig.height=1.5, fig.width=2}
+p.ATN1 = d4p %>%
+  filter(Locus == "ATN1") %>%
+  ggplot(aes(x = Locus, y = value, color = Source)) +
+  geom_boxplot_jitter(linetype = "dashed", outlier.size = .01,
+               position = position_dodge(1),
+               outlier.jitter.width	= 0.02) +
+  stat_boxplot(aes(ymin = ..lower.., ymax = ..upper..),
+               outlier.size = .01,
+               position = position_dodge(1)) +
+  stat_boxplot(geom = "errorbar", aes(ymin = ..ymax..),
+               position = position_dodge(1)) +
+  stat_boxplot(geom = "errorbar", aes(ymax = ..ymin..),
+               position = position_dodge(1)) +
+  #guides(color = FALSE) +
+  labs(x = NULL, y = "# of Repeats") +
+  theme(plot.margin = margin(0))
+p.ATN1
+ggsave2(p.ATN1, filename = here::here("output", DOCNAME, "Fig.repeat_dis.ATN1.pdf"),
+        height = 1.5, width = 2)
+```
+
+All common site
+
+```{r plot-all, fig.width=8, fig.height=9}
+p_lst = lapply(common_loci, function(x){
+  d4p %>%
+    filter(Locus == x) %>%
+    ggplot(aes(x = Locus, y = value, color = Source)) +
+    geom_boxplot(linetype = "dashed", outlier.size = .01,
+                 position = position_dodge(1)) +
+    stat_boxplot(aes(ymin = ..lower.., ymax = ..upper..),
+                 outlier.size = .01,
+                 position = position_dodge(1)) +
+    stat_boxplot(geom = "errorbar", aes(ymin = ..ymax..),
+                 position = position_dodge(1)) +
+    stat_boxplot(geom = "errorbar", aes(ymax = ..ymin..),
+                 position = position_dodge(1)) +
+    guides(color = FALSE) +
+    labs(x = NULL, y = NULL)
+})
+
+p = p_lst %>% 
+  wrap_plots(ncol = 8) & theme(plot.margin = margin(0))
+p
+ggsave2(p, filename = here::here("output", DOCNAME, "Fig.repeat_dis.png"),
+        height = 9, width = 8, dpi = 600)
+```
+
+## Session info
+

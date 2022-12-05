@@ -1,0 +1,1191 @@
+---
+title: "str.mutational_patterns"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "str.mutational_patterns"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+- Plot some examples of aSTRs
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggbeeswarm)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+geom.text.size <- 7
+
+# heatmap
+library(pheatmap)
+library(corrplot)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+## 2, 3, 4, 5, 6
+cPalette <- c("#999999", "#7DA1D4", "#BEDE85", "#DCB070", "#EAAAB0")
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+source(here::here("code/geom_boxplot2.R"))
+```
+
+## Load data
+
+Load STR info
+
+```{r load-str-info, message=FALSE, warning=FALSE}
+str_info <- read_tsv("/niuyw-usb-disk/Projects/STR/str_info/str_info.txt") %>%
+  dplyr::select(site:gene_type) %>%
+  mutate(csq2 = case_when(
+    csq == "upstream" ~ "Promoter",
+    csq == "nc_intron" ~ "Noncoding_intron",
+    csq == "intron" ~ "Coding_intron",
+    csq == "downstream" ~ "Downstream",
+    csq == "UTR3" ~ "3'UTR",
+    csq == "intergenic" ~ "Intergenic",
+    csq == "nc_exon" ~ "Noncoding_exon",
+    csq == "UTR5" ~ "5'UTR",
+    TRUE ~ csq
+  )) %>%
+  mutate(csq2 = factor(csq2, levels = c(
+    "Intergenic", "Downstream", "Promoter",
+    "Noncoding_intron", "Noncoding_exon",
+    "5'UTR", "3'UTR",
+    "Coding_intron", "CDS"
+  ))) %>%
+  mutate(period = case_when(
+    period == 2 ~ "Di-",
+    period == 3 ~ "Tri-",
+    period == 4 ~ "Tet-",
+    period == 5 ~ "Pen-",
+    period == 6 ~ "Hex-"
+  )) %>%
+  mutate(period = factor(period, levels = c("Di-", "Tri-", "Tet-", "Pen-", "Hex-")))
+
+DT::datatable(head(str_info, 10))
+```
+
+Load allele info
+
+```{r load-allele-info, message=FALSE, warning=FALSE}
+allele_info <- read_tsv("/niuyw-usb-disk/Projects/STR/str_mutational/allele_info.txt") %>%
+  mutate(motif_len = period) %>%
+  mutate(period = case_when(
+    period == 2 ~ "Di-",
+    period == 3 ~ "Tri-",
+    period == 4 ~ "Tet-",
+    period == 5 ~ "Pen-",
+    period == 6 ~ "Hex-"
+  )) %>%
+  mutate(period = factor(period, levels = c("Di-", "Tri-", "Tet-", "Pen-", "Hex-")))
+allele_info.nyuwa <- read_tsv("/niuyw-usb-disk/Projects/STR/str_mutational/allele_info.nyuwa.txt") %>%
+  mutate(motif_len = period) %>%
+  mutate(period = case_when(
+    period == 2 ~ "Di-",
+    period == 3 ~ "Tri-",
+    period == 4 ~ "Tet-",
+    period == 5 ~ "Pen-",
+    period == 6 ~ "Hex-"
+  )) %>%
+  mutate(period = factor(period, levels = c("Di-", "Tri-", "Tet-", "Pen-", "Hex-")))
+allele_info.1kgp <- read_tsv("/niuyw-usb-disk/Projects/STR/str_mutational/allele_info.1kgp.txt") %>%
+  mutate(motif_len = period) %>%
+  mutate(period = case_when(
+    period == 2 ~ "Di-",
+    period == 3 ~ "Tri-",
+    period == 4 ~ "Tet-",
+    period == 5 ~ "Pen-",
+    period == 6 ~ "Hex-"
+  )) %>%
+  mutate(period = factor(period, levels = c("Di-", "Tri-", "Tet-", "Pen-", "Hex-")))
+
+DT::datatable(head(allele_info, 10))
+```
+
+## Alleles number
+
+Each pSTR has 4.261638 alleles on average.
+
+```{r num.alleles-mean, fig.width=3, fig.height=3}
+mean(str_info$num.alleles)
+median(str_info$num.alleles)
+```
+
+Mean by period
+
+```{r num.alleles-mean-byPeriod, fig.width=3, fig.height=3}
+str_info %>%
+  group_by(period) %>%
+  summarise(
+    mean = mean(num.alleles),
+    median = median(num.alleles)
+  )
+```
+
+Number of alleles
+
+```{r num.alleles-table, fig.width=3, fig.height=3}
+table(str_info$num.alleles)
+```
+
+Number of alleles by period
+
+```{r num.alleles-table-by-period, fig.width=3, fig.height=3}
+str_info %>%
+  group_by(period, num.alleles) %>%
+  summarise(n = n()) %>%
+  DT::datatable(filter = "top")
+```
+
+All pSTRs
+
+```{r num.alleles-hist, fig.width=3, fig.height=2.5}
+p.numallele <- str_info %>%
+  ggplot(aes(x = num.alleles)) +
+  geom_histogram(binwidth = 1, fill = "#1f77b4") +
+  geom_vline(xintercept = mean(str_info$num.alleles), linetype = "dashed") +
+  scale_y_log10(
+    expand = c(0, 0),
+    breaks = trans_breaks("log10", function(x) 10^x),
+    labels = trans_format("log10", math_format(10^.x))
+  ) +
+  labs(x = "# of alleles per locus", y = "# of pSTR")
+p.numallele
+```
+
+Cumulative distribution
+
+```{r , fig.width=2.5, fig.height=2.5}
+str_info %>%
+  mutate(value = case_when(
+    num.alleles >= 10 ~ 10,
+    TRUE ~ num.alleles
+  )) %>%
+  group_by(period, value) %>%
+  summarise(n = n()) %>%
+  mutate(cum = cumsum(n)) %>%
+  mutate(prop = cum / sum(n)) %>%
+  ggplot(aes(x = value, y = prop, color = period)) +
+  geom_point() +
+  geom_line() +
+  scale_x_continuous(breaks = seq(0, 10, 1)) +
+  scale_color_manual(values = period_color_map) +
+  labs(x = "# of alleles per locus", y = "CDF") +
+  theme(legend.position = c(.7, .25))
+```
+
+By period
+
+```{r num.alleles-by-period, fig.width=2, fig.height=2.5}
+p.numallele.byPeriod <- str_info %>%
+  ggplot(aes(x = period, y = num.alleles, fill = period)) +
+  geom_boxplot2(width = .7, width.errorbar = .5) +
+  scale_fill_manual(values = period_color_map) +
+  labs(x = "Motif length", y = "# of alleles per locus") +
+  theme(legend.position = "none")
+p.numallele.byPeriod
+```
+
+Combine
+
+```{r fig.width=3, fig.height=2.5, eval=FALSE}
+# cowplot
+p.numallele2 = ggdraw(p.numallele) +
+  draw_plot(p.numallele.byPeriod, .45, .2, .55, .8)
+p.numallele2
+```
+
+```{r fig.width=3, fig.height=2.5}
+p.numallele2 = p.numallele +
+  inset_element(p.numallele.byPeriod & theme(plot.margin = unit(c(0,0,0,0),"mm")),
+                .35, .05, 1, 1)
+p.numallele2
+```
+
+## Alleles number (freq > 1%)
+
+Each pSTR has 1.515878 alleles on average.
+
+```{r num.alleles.freq1-mean, fig.width=3, fig.height=3}
+mean(str_info$num.alleles.freq1)
+median(str_info$num.alleles.freq1)
+```
+
+Mean by period
+
+```{r , fig.width=3, fig.height=3}
+str_info %>%
+  group_by(period) %>%
+  summarise(
+    mean = mean(num.alleles.freq1),
+    median = median(num.alleles.freq1)
+  )
+```
+
+Number of alleles
+
+```{r num.alleles.freq1-table, fig.width=3, fig.height=3}
+table(str_info$num.alleles.freq1)
+```
+
+Number of alleles by period
+
+```{r num.alleles.freq1-table-by-period, fig.width=3, fig.height=3}
+str_info %>%
+  group_by(period, num.alleles.freq1) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n)) %>%
+  DT::datatable(filter = "top")
+```
+
+All pSTRs
+
+```{r num.alleles.freq1-hist, fig.width=3, fig.height=3}
+str_info %>%
+  ggplot(aes(x = num.alleles.freq1)) +
+  geom_histogram(binwidth = 1, fill = "#1f77b4") +
+  geom_vline(xintercept = mean(str_info$num.alleles.freq1), linetype = "dashed") +
+  scale_y_log10(
+    expand = c(0, 0),
+    breaks = trans_breaks("log10", function(x) 10^x),
+    labels = trans_format("log10", math_format(10^.x))
+  ) +
+  labs(x = "# of alleles per locus", y = "# of pSTR")
+```
+
+Cumulative distribution
+
+```{r , fig.width=2.5, fig.height=2.5}
+dat = str_info %>%
+  mutate(value = case_when(
+    num.alleles.freq1 >= 10 ~ 10,
+    TRUE ~ num.alleles.freq1
+  )) %>%
+  group_by(period, value) %>%
+  summarise(n = n()) %>%
+  mutate(cum = cumsum(n)) %>%
+  mutate(prop = cum / sum(n))
+DT::datatable(dat, filter = "top")
+
+p.cum.allele_freq1 <- dat %>%
+  ggplot(aes(x = value, y = prop, color = period)) +
+  geom_point() +
+  geom_line() +
+  scale_x_continuous(breaks = seq(0, 10, 1)) +
+  scale_color_manual(values = period_color_map) +
+  labs(x = "# of alleles with AF > 1% per locus", y = "CDF") +
+  theme(legend.position = c(.7, .3))
+p.cum.allele_freq1
+```
+
+By period
+
+```{r num.alleles.freq1-by-period, fig.width=2, fig.height=3}
+str_info %>%
+  ggplot(aes(x = period, y = num.alleles.freq1, fill = period)) +
+  geom_boxplot2(width = .7, width.errorbar = .5) +
+  scale_fill_manual(values = period_color_map) +
+  labs(x = "Motif length", y = "# of alleles per locus") +
+  theme(legend.position = "none")
+```
+
+By csq2
+
+```{r fig.width=2.5, fig.height=3.5}
+str_info %>%
+  ggplot(aes(x = csq2, y = num.alleles.freq1, fill = csq2)) +
+  geom_boxplot2(width = .7, width.errorbar = .5) +
+  scale_fill_jco() +
+  labs(x = NULL, y = "# of alleles per locus", fill = NULL) +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 60, hjust = 1)
+  )
+```
+
+By period by csq2
+
+```{r fig.width=8, fig.height=3}
+str_info %>%
+  ggplot(aes(x = csq2, y = num.alleles.freq1, fill = csq2)) +
+  geom_boxplot2() +
+  scale_fill_jco() +
+  labs(x = NULL, y = "# of alleles per locus", fill = NULL) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "top"
+  ) +
+  facet_wrap(~period, scales = "free_y", nrow = 1) +
+  theme(strip.background = element_rect(fill = "#f3f2f1"))
+```
+
+## Alleles number (freq > 5%)
+
+Each pSTR has 1.255532 alleles on average.
+
+```{r num.alleles.freq5-mean, fig.width=3, fig.height=3}
+mean(str_info$num.alleles.freq5)
+median(str_info$num.alleles.freq5)
+```
+
+Mean by period
+
+```{r , fig.width=3, fig.height=3}
+str_info %>%
+  group_by(period) %>%
+  summarise(
+    mean = mean(num.alleles.freq5),
+    median = median(num.alleles.freq5)
+  )
+```
+
+Number of loci
+
+```{r num.alleles.freq5-table, fig.width=3, fig.height=3}
+table(str_info$num.alleles.freq5)
+```
+
+Number of alleles by period
+
+```{r num.alleles.freq5-table-by-period, fig.width=3, fig.height=3}
+str_info %>%
+  group_by(period, num.alleles.freq1) %>%
+  summarise(n = n()) %>%
+  DT::datatable(filter = "top")
+```
+
+All pSTRs
+
+```{r num.alleles.freq5-hist, fig.width=3, fig.height=3}
+str_info %>%
+  ggplot(aes(x = num.alleles.freq5)) +
+  geom_histogram(binwidth = 1, fill = "#1f77b4") +
+  geom_vline(xintercept = mean(str_info$num.alleles.freq5), linetype = "dashed") +
+  scale_y_log10(
+    expand = c(0, 0),
+    breaks = trans_breaks("log10", function(x) 10^x),
+    labels = trans_format("log10", math_format(10^.x))
+  ) +
+  labs(x = "# of alleles per locus", y = "# of pSTR")
+```
+
+Cumulative distribution
+
+```{r , fig.width=2.5, fig.height=2.5}
+str_info %>%
+  mutate(value = case_when(
+    num.alleles.freq5 >= 10 ~ 10,
+    TRUE ~ num.alleles.freq5
+  )) %>%
+  group_by(period, value) %>%
+  summarise(n = n()) %>%
+  mutate(cum = cumsum(n)) %>%
+  mutate(prop = cum / sum(n)) %>%
+  ggplot(aes(x = value, y = prop, color = period)) +
+  geom_point() +
+  geom_line() +
+  scale_x_continuous(breaks = seq(0, 10, 1)) +
+  scale_color_manual(values = period_color_map) +
+  labs(x = "# of alleles with AF > 5% per locus", y = "CDF") +
+  theme(legend.position = c(.8, .25)) +
+  theme(legend.position = c(.7, .25))
+```
+
+By period
+
+```{r num.alleles.freq5-by-period, fig.width=2, fig.height=3}
+str_info %>%
+  ggplot(aes(x = period, y = num.alleles.freq5, fill = period)) +
+  geom_boxplot2(width = .7, width.errorbar = .5) +
+  scale_fill_manual(values = period_color_map) +
+  labs(x = "Motif length", y = "# of alleles per locus") +
+  theme(legend.position = "none")
+```
+
+By csq2
+
+```{r fig.width=2.5, fig.height=3.5}
+str_info %>%
+  ggplot(aes(x = csq2, y = num.alleles.freq5, fill = csq2)) +
+  geom_boxplot2(width = .7, width.errorbar = .5) +
+  scale_fill_jco() +
+  labs(x = NULL, y = "# of alleles per locus", fill = NULL) +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 60, hjust = 1)
+  )
+```
+
+By period by csq2
+
+```{r fig.width=8, fig.height=3}
+str_info %>%
+  ggplot(aes(x = csq2, y = num.alleles.freq5, fill = csq2)) +
+  geom_boxplot2() +
+  scale_fill_jco() +
+  labs(x = NULL, y = "# of alleles per locus", fill = NULL) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "top"
+  ) +
+  facet_wrap(~period, scales = "free_y", nrow = 1) +
+  theme(strip.background = element_rect(fill = "#f3f2f1"))
+```
+
+## Heterozygosity
+
+By period
+
+```{r Heterozygosity, fig.width=2, fig.height=3}
+p.het <- str_info %>%
+  ggplot(aes(x = period, y = het, fill = period)) +
+  geom_boxplot2(width = .7, width.errorbar = .5) +
+  scale_fill_manual(values = period_color_map) +
+  labs(x = "Motif length", y = "Heterozygosity") +
+  theme(legend.position = "none")
+p.het
+```
+
+## Entropy
+
+By period
+
+```{r Entropy-by-period, fig.width=2, fig.height=3}
+str_info %>%
+  ggplot(aes(x = period, y = entropy, fill = period)) +
+  geom_boxplot2(width = .7, width.errorbar = .5) +
+  scale_fill_manual(values = period_color_map) +
+  labs(x = "Motif length", y = "Entropy") +
+  theme(legend.position = "none")
+```
+
+## Diff repeat of major allele from ref
+
+Stats from zero
+
+```{r, fig.width=2.5, fig.height=2.5}
+dat <- str_info %>%
+  mutate(
+    motif_len = str_length(motif),
+    diff_len = mal - ref
+  ) %>%
+  mutate(diff_repeat = diff_len / motif_len) %>%
+  dplyr::select(period, diff_repeat) %>%
+  mutate(bin = case_when(
+    diff_repeat <= -15 ~ -15,
+    diff_repeat >= 15 ~ 15,
+    TRUE ~ diff_repeat
+  ))
+
+dat %>%
+  mutate(zero = case_when(
+    diff_repeat > 0 ~ 1,
+    diff_repeat < 0 ~ -1,
+    TRUE ~ diff_repeat
+  )) %>%
+  group_by(zero) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n) * 100)
+```
+
+Stats
+
+```{r, fig.width=2.5, fig.height=2.5}
+dat %>%
+  group_by(bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n)*100) %>%
+  DT::datatable(filter = "top")
+```
+
+Stats by period
+
+```{r, fig.width=2.5, fig.height=2.5}
+dat %>%
+  group_by(period, bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n)*100) %>%
+  DT::datatable(filter = "top")
+```
+
+Plot
+
+```{r, fig.width=2.5, fig.height=2.5}
+p.diff_major_ref <- dat %>%
+  group_by(bin) %>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = bin, y = n)) +
+  geom_col(fill = "#1f77b4") +
+  scale_y_log10(
+    expand = c(0, 0),
+    breaks = trans_breaks("log10", function(x) 10^x),
+    labels = trans_format("log10", math_format(10^.x))
+  ) +
+  scale_x_continuous(breaks = seq(-15, 15, 5)) +
+  labs(
+    x = "Major allele repeat differences from reference",
+    y = "# of pSTR"
+  )
+p.diff_major_ref
+```
+
+```{r, fig.width=7.5, fig.height=3}
+p.diff_major_ref.byPeriod <- dat %>%
+  group_by(period, bin) %>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = bin, y = n)) +
+  geom_col(fill = "#1f77b4") +
+  scale_y_log10(
+    expand = c(0, 0),
+    breaks = trans_breaks("log10", function(x) 10^x),
+    labels = trans_format("log10", math_format(10^.x))
+  ) +
+  scale_x_continuous(breaks = seq(-15, 15, 5)) +
+  labs(
+    x = "Major allele repeat differences from reference",
+    y = "# of pSTR"
+  ) +
+  facet_wrap(~period, scales = "free", nrow = 1) +
+  theme(strip.background = element_rect(fill = "#f3f2f1"))
+p.diff_major_ref.byPeriod
+```
+
+## Diff repeat of allele from major allele
+
+Stats from zero
+
+```{r, fig.width=2.5, fig.height=2.5}
+dat <- allele_info %>%
+  mutate(diff_len = allele_len - mal) %>%
+  mutate(diff_repeat = diff_len / motif_len) %>%
+  dplyr::select(period, diff_repeat) %>%
+  mutate(bin = case_when(
+    diff_repeat <= -15 ~ -15,
+    diff_repeat >= 15 ~ 15,
+    TRUE ~ diff_repeat
+  ))
+
+dat %>%
+  mutate(zero = case_when(
+    diff_repeat > 0 ~ 1,
+    diff_repeat < 0 ~ -1,
+    TRUE ~ diff_repeat
+  )) %>%
+  group_by(zero) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n) * 100)
+```
+
+Stats from zero by period
+
+```{r, fig.width=2.5, fig.height=2.5}
+dat %>%
+  mutate(zero = case_when(
+    diff_repeat > 0 ~ 1,
+    diff_repeat < 0 ~ -1,
+    TRUE ~ diff_repeat
+  )) %>%
+  group_by(period, zero) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n) * 100) %>%
+  DT::datatable()
+```
+
+Stats
+
+```{r, fig.width=2.5, fig.height=2.5}
+dat %>%
+  group_by(bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n)*100) %>%
+  DT::datatable(filter = "top")
+```
+
+Stats by period
+
+```{r, fig.width=2.5, fig.height=2.5}
+dat %>%
+  group_by(period, bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n)*100) %>%
+  DT::datatable(filter = "top")
+```
+
+Plot
+
+```{r, fig.width=2.5, fig.height=2.5}
+p.diff_allele_major <- dat %>%
+  group_by(bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n / sum(n) * 100) %>%
+  ggplot(aes(x = bin, y = prop)) +
+  geom_col(fill = "#1f77b4") +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_continuous(breaks = seq(-15, 15, 5)) +
+  labs(
+    x = "Repeat differences from major allele",
+    y = "% of alleles"
+  )
+p.diff_allele_major
+```
+
+```{r, fig.width=7.5, fig.height=2.5}
+p.diff_allele_major.byPeriod <- dat %>%
+  group_by(period, bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n / sum(n) * 100) %>%
+  ggplot(aes(x = bin, y = prop)) +
+  geom_col(fill = "#1f77b4") +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_continuous(breaks = seq(-15, 15, 5)) +
+  labs(
+    x = "Repeat differences from major allele",
+    y = "% of alleles"
+  ) +
+  facet_wrap(~period, scales = "free", nrow = 1) +
+  theme(strip.background = element_rect(fill = "#f3f2f1"))
+p.diff_allele_major.byPeriod
+```
+
+## Diff repeat of allele from ref allele
+
+```{r, fig.width=3.5, fig.height=2.5}
+dat <- allele_info %>%
+  mutate(diff_len = allele_len - ref_len) %>%
+  mutate(diff_repeat = diff_len / motif_len) %>%
+  dplyr::select(period, diff_repeat) %>%
+  mutate(bin = case_when(
+    diff_repeat <= -15 ~ -15,
+    diff_repeat >= 15 ~ 15,
+    TRUE ~ diff_repeat
+  ))
+
+dat %>%
+  group_by(bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n / sum(n) * 100) %>%
+  ggplot(aes(x = bin, y = prop)) +
+  geom_col(fill = "#1f77b4") +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_continuous(breaks = seq(-15, 15, 5)) +
+  labs(
+    x = "Repeat differences from reference",
+    y = "% of alleles"
+  )
+```
+
+```{r, fig.width=7.5, fig.height=2.5}
+dat %>%
+  group_by(period, bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n / sum(n) * 100) %>%
+  ggplot(aes(x = bin, y = prop)) +
+  geom_col(fill = "#1f77b4") +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_continuous(breaks = seq(-15, 15, 5)) +
+  labs(
+    x = "Repeat differences from reference",
+    y = "% of alleles"
+  ) +
+  facet_wrap(~period, scales = "free", nrow = 1) +
+  theme(strip.background = element_rect(fill = "#f3f2f1"))
+```
+
+## Ref allele length
+
+```{r fig.width=2.5, fig.height=2.5}
+str_info %>%
+  group_by(period, ref) %>%
+  summarise(
+    m_het = mean(het),
+    n = n()
+  ) %>%
+  filter(n > 50) %>%
+  ggplot(aes(x = ref, y = m_het, color = period)) +
+  geom_point() +
+  geom_line() +
+  scale_color_manual(values = period_color_map) +
+  labs(
+    x = "Reference allele length (bp)", y = "Mean heterozygosity",
+    color = NULL
+  ) +
+  theme(legend.position = c(.7, .25))
+```
+
+## Major allele length
+
+```{r fig.width=2.5, fig.height=2.5}
+p.het.byMAL <- str_info %>%
+  group_by(period, mal) %>%
+  summarise(
+    m_het = mean(het),
+    n = n()
+  ) %>%
+  filter(n > 50) %>%
+  ggplot(aes(x = mal, y = m_het, color = period)) +
+  geom_point() +
+  geom_line() +
+  scale_color_manual(values = period_color_map) +
+  labs(
+    x = "Major allele length (bp)", y = "Mean heterozygosity",
+    color = NULL
+  ) +
+  theme(legend.position = c(.7, .25))
+p.het.byMAL
+```
+
+## MAF
+
+Range of maf
+
+```{r}
+range(str_info$maf)
+range(na.omit(str_info$maf_1kgp))
+range(na.omit(str_info$maf_nyuwa))
+```
+
+Stats
+
+```{r}
+str_info %>%
+  mutate(maf_bin = cut(maf, c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1),
+    labels = c("0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1")
+  )) %>%
+  group_by(maf_bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n / sum(n) * 100) %>%
+  DT::datatable(filter = "top")
+```
+
+Stats by period
+
+```{r}
+str_info %>%
+  mutate(maf_bin = cut(maf, c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1),
+    labels = c("0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1")
+  )) %>%
+  group_by(period, maf_bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n / sum(n) * 100) %>%
+  DT::datatable(filter = "top")
+```
+
+Plot Percent
+
+```{r fig.width=2.5, fig.height=2.5}
+str_info %>%
+  mutate(maf_bin = cut(maf, c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99, 1),
+    labels = c("0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "0.99", "1")
+  )) %>%
+  group_by(maf_bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n / sum(n) * 100) %>%
+  ggplot(aes(x = maf_bin, y = prop)) +
+  geom_col(fill = "#1f77b4") +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Major allele frequency bins",
+       y = "% of loci") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+Plot Percent
+
+```{r fig.width=3.5, fig.height=2.5}
+str_info %>%
+  mutate(maf_bin = cut(maf, c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99, 1),
+    labels = c("0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "0.99", "1")
+  )) %>%
+  group_by(period, maf_bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n / sum(n) * 100) %>%
+  ggplot(aes(x = maf_bin, y = prop, fill = period)) +
+  geom_col(position = position_dodge()) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Major allele frequency bins",
+       y = "% of loci") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+Density
+
+```{r fig.width=4, fig.height=3}
+str_info %>%
+  ggplot(aes(x = maf)) +
+  geom_density()
+```
+
+Hist
+
+```{r fig.width=2.5, fig.height=2.5}
+p.maf = str_info %>%
+  ggplot(aes(x = maf)) +
+  geom_histogram(binwidth = .01, fill = "#1f77b4") +
+  scale_y_log10(
+    expand = c(0, 0),
+    breaks = trans_breaks("log10", function(x) 10^x),
+    labels = trans_format("log10", math_format(10^.x))
+  ) +
+  labs(x = "Major allele frequency",
+       y = "# of pSTR")
+p.maf
+```
+
+
+Hist
+
+```{r fig.width=7.5, fig.height=2.5}
+p.maf.byPeriod = str_info %>%
+  ggplot(aes(x = maf)) +
+  geom_histogram(binwidth = .01, fill = "#1f77b4") +
+  scale_y_log10(
+    expand = c(0, 0),
+    breaks = trans_breaks("log10", function(x) 10^x),
+    labels = trans_format("log10", math_format(10^.x))
+  ) +
+  labs(x = "Major allele frequency",
+       y = "# of pSTR")+
+  facet_wrap(~period, scales = "free", nrow = 1) +
+  theme(strip.background = element_rect(fill = "#f3f2f1"))
+p.maf.byPeriod
+```
+
+## Allele freq
+
+By period
+
+```{r fig.width=3.75, fig.height=3}
+p.af.tot <- allele_info %>%
+  mutate(bin = cut(af,
+    c(
+      0, 0.0001, 0.001, 0.01,
+      0.1, 0.5, 0.9,
+      0.99, 0.999, 0.9999, 1
+    ),
+    labels = c(
+      "0.0001", "0.001", "0.01",
+      "0.1", "0.5", "0.9",
+      "0.99", "0.999", "0.9999", "1"
+    )
+  )) %>%
+  group_by(period, bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n / sum(n) * 100) %>%
+  ggplot(aes(x = bin, y = prop, fill = period)) +
+  geom_col(position = position_dodge()) +
+  scale_fill_manual(values = cPalette) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x = "Allele frequency bins", y = "% of alleles",
+    fill = NULL
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.position = c(.8, .8)
+  )
+p.af.tot
+```
+
+By expansion/contraction
+
+```{r fig.width=3.75, fig.height=3}
+p.af.len.tot <- allele_info %>%
+  mutate(type = case_when(
+    allele_len == ref_len ~ "Reference",
+    allele_len > ref_len ~ "Expansion",
+    allele_len < ref_len ~ "Contraction"
+  )) %>%
+  mutate(type = factor(type, levels = c("Expansion", "Reference", "Contraction"))) %>%
+  mutate(bin = cut(af,
+    c(
+      0, 0.0001, 0.001, 0.01,
+      0.1, 0.5, 0.9,
+      0.99, 0.999, 0.9999, 1
+    ),
+    labels = c(
+      "0.0001", "0.001", "0.01",
+      "0.1", "0.5", "0.9",
+      "0.99", "0.999", "0.9999", "1"
+    )
+  )) %>%
+  group_by(type, bin) %>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = bin, y = n, fill = type)) +
+  geom_col(position = position_dodge(), width = .7) +
+  scale_fill_manual(values = cPalette) +
+  scale_y_log10(
+    expand = c(0, 0),
+    breaks = trans_breaks("log10", function(x) 10^x),
+    labels = trans_format("log10", math_format(10^.x))
+  ) +
+  labs(
+    x = "Allele frequency bins", y = "# of alleles",
+    fill = NULL
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.position = "top"
+  )
+p.af.len.tot
+```
+
+## Allele freq (NyuWa and 1KGP)
+
+```{r fig.width=7.5, fig.height=7}
+p.af.nyuwa <- allele_info.nyuwa %>%
+  mutate(bin = cut(af,
+    c(
+      0, 0.001, 0.01,
+      0.1, 0.5, 0.9,
+      0.99, 0.999, 1
+    ),
+    labels = c(
+      "0.001", "0.01",
+      "0.1", "0.5", "0.9",
+      "0.99", "0.999", "1"
+    )
+  )) %>%
+  group_by(period, bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n / sum(n) * 100) %>%
+  ggplot(aes(x = bin, y = prop, fill = period)) +
+  geom_col(position = position_dodge()) +
+  scale_fill_manual(values = cPalette) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x = "Allele frequency bins", y = "% of alleles",
+    #title = "NyuWa",
+    fill = NULL
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.position = c(.8, .8)
+  )
+p.af.len.nyuwa <- allele_info.nyuwa %>%
+  mutate(type = case_when(
+    allele_len == ref_len ~ "Reference",
+    allele_len > ref_len ~ "Expansion",
+    allele_len < ref_len ~ "Contraction"
+  )) %>%
+  mutate(type = factor(type, levels = c("Expansion", "Reference", "Contraction"))) %>%
+  mutate(bin = cut(af,
+    c(
+      0, 0.001, 0.01,
+      0.1, 0.5, 0.9,
+      0.99, 0.999, 1
+    ),
+    labels = c(
+      "0.001", "0.01",
+      "0.1", "0.5", "0.9",
+      "0.99", "0.999", "1"
+    )
+  )) %>%
+  group_by(type, bin) %>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = bin, y = n, fill = type)) +
+  geom_col(position = position_dodge(), width = .7) +
+  scale_fill_manual(values = cPalette) +
+  scale_y_log10(
+    expand = c(0, 0),
+    breaks = trans_breaks("log10", function(x) 10^x),
+    labels = trans_format("log10", math_format(10^.x))
+  ) +
+  labs(
+    x = "Allele frequency bins", y = "# of alleles",
+    #title = "NyuWa",
+    fill = NULL
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.position = "top"
+  )
+
+p.af.1kgp <- allele_info.1kgp %>%
+  mutate(bin = cut(af,
+    c(
+      0, 0.001, 0.01,
+      0.1, 0.5, 0.9,
+      0.99, 0.999, 1
+    ),
+    labels = c(
+      "0.001", "0.01",
+      "0.1", "0.5", "0.9",
+      "0.99", "0.999", "1"
+    )
+  )) %>%
+  group_by(period, bin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n / sum(n) * 100) %>%
+  ggplot(aes(x = bin, y = prop, fill = period)) +
+  geom_col(position = position_dodge()) +
+  scale_fill_manual(values = cPalette) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x = "Allele frequency bins", y = "% of alleles",
+    #title = "1KGP",
+    fill = NULL
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.position = c(.8, .8)
+  )
+p.af.len.1kgp <- allele_info.1kgp %>%
+  mutate(type = case_when(
+    allele_len == ref_len ~ "Reference",
+    allele_len > ref_len ~ "Expansion",
+    allele_len < ref_len ~ "Contraction"
+  )) %>%
+  mutate(type = factor(type, levels = c("Expansion", "Reference", "Contraction"))) %>%
+  mutate(bin = cut(af,
+    c(
+      0, 0.001, 0.01,
+      0.1, 0.5, 0.9,
+      0.99, 0.999, 1
+    ),
+    labels = c(
+      "0.001", "0.01",
+      "0.1", "0.5", "0.9",
+      "0.99", "0.999", "1"
+    )
+  )) %>%
+  group_by(type, bin) %>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = bin, y = n, fill = type)) +
+  geom_col(position = position_dodge(), width = .7) +
+  scale_fill_manual(values = cPalette) +
+  scale_y_log10(
+    expand = c(0, 0),
+    breaks = trans_breaks("log10", function(x) 10^x),
+    labels = trans_format("log10", math_format(10^.x))
+  ) +
+  labs(
+    x = "Allele frequency bins", y = "# of alleles",
+    #title = "1KGP",
+    fill = NULL
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.position = "top"
+  )
+
+p.af.nyuwa + p.af.1kgp +
+   p.af.len.nyuwa + p.af.len.1kgp +
+  plot_layout(ncol = 2)
+```
+
+## Align plots
+
+### Main
+
+Row 1
+
+```{r fig.width=7.5, fig.height=2.5}
+p1 <- p.numallele2 + p.cum.allele_freq1 + p.het.byMAL +
+  plot_layout(widths = c(3, 2.5, 2.5))
+p1
+```
+
+Row 2
+
+```{r fig.width=7.5, fig.height=2.5}
+p2 <- p.maf + p.diff_major_ref + p.diff_allele_major + 
+  plot_layout(nrow = 1)
+p2
+```
+
+Figure 2
+
+```{r fig.width=7.5, fig.height=5.1}
+p <- p1 / p2
+p
+
+ggsave2(p,
+  filename = here::here("output", DOCNAME, "Fig.str_mutational.pdf"),
+  height = 5.1, width = 7.5
+)
+```
+
+### Diff supp
+
+```{r fig.width=7.5, fig.height=7}
+p.diff.supp <- p.maf.byPeriod / p.diff_major_ref.byPeriod / p.diff_allele_major.byPeriod
+p.diff.supp
+
+ggsave2(p.diff.supp,
+  filename = here::here("output", DOCNAME, "Fig.diff_supp.pdf"),
+  height = 7, width = 7.5
+)
+```
+
+### AF Supp
+
+```{r fig.width=7.7, fig.height=6.1}
+p.af.len = p.af.len.tot + p.af.len.nyuwa + p.af.len.1kgp +
+  plot_layout(guides = "collect") & theme(legend.position = "top")
+#p.af.len
+p.af = p.af.tot + p.af.nyuwa + p.af.1kgp +
+  plot_layout(guides = "collect") & theme(legend.position = "top")
+#p.af
+
+p.af.supp = p.af.len/p.af
+p.af.supp
+
+ggsave2(p.af.supp,
+  filename = here::here("output", DOCNAME, "Fig.AF_supp.pdf"),
+  height = 6.1, width = 7.7
+)
+```
+
+## Session info

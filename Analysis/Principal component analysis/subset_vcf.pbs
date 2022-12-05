@@ -1,0 +1,102 @@
+#!/bin/bash
+#PBS -V
+#PBS -j eo
+#PBS -N chr22.subset_vcf
+#PBS -q Fat
+#PBS -l nodes=1:ppn=1
+#PBS -d /home2/niuyw/project/STR/PCA/logs
+
+# WORK DIR
+WORKDIR=/home2/niuyw/project/STR/PCA
+
+# chrom
+echo $chrom
+
+# PPN
+PPN=1
+
+# genome and annotations
+ANNODIR=/home2/niuyw/RefData
+GRCh38_REFERENCE=$ANNODIR/Homo_sapiens/GRCh38_no_alt/genome.fa
+GRCh38_GTF=$ANNODIR/Homo_sapiens/GENCODE_v39/gencode.v39.annotation.gtf
+GRCh38_bowtie2=$ANNODIR/Homo_sapiens/GRCh38_no_alt/Bowtie2Index/GRCh38_no_alt
+GRCh38_STAR=$ANNODIR/Homo_sapiens/GRCh38_no_alt/STARgenomes
+
+# tools dir
+TOOLDIR=/home2/niuyw/software
+path2java=$TOOLDIR/jdk1.8.0_311/bin/java
+path2bedtools=$TOOLDIR/bedtools2/bin/bedtools
+path2samtools=$TOOLDIR/samtools.1.9/bin/samtools
+path2bcftools=$TOOLDIR/bcftools-1.14/bcftools
+export BCFTOOLS_PLUGINS=$TOOLDIR/bcftools-1.14/plugins
+path2picard=$TOOLDIR/picard-2.9.2/picard.jar
+
+echo Start time is `date +%Y/%m/%d--%H:%M`
+
+input=/home2/niuyw/project/STR/02_FilteredRaw220116/${chrom}-filter-add.vcf.gz
+
+# NyuWa, CHN and CHS
+output=$WORKDIR/NyuWa.CHN_CHS/vcf/
+if [ ! -d $output ]; then mkdir -p $output; fi
+$path2bcftools view --threads $PPN -i 'INFO/PERIOD <= 6' -S $WORKDIR/samNyuWa.CHN_CHS.lst -c 1 -Oz -o $output/tmp.${chrom}.vcf.gz $input
+$path2bcftools +fill-tags --threads $PPN -Oz -o $output/${chrom}.vcf.gz $output/tmp.${chrom}.vcf.gz -- -t AC,AN,AF,MAF
+$TOOLDIR/htslib.1.14/bin/tabix -p vcf $output/${chrom}.vcf.gz
+rm $output/tmp.${chrom}.vcf.gz
+
+: <<'end_long_comment'
+# NyuWa
+output=$WORKDIR/NyuWa/vcf/
+if [ ! -d $output ]; then mkdir -p $output; fi
+$path2bcftools view --threads $PPN -i 'INFO/PERIOD <= 6' -S $WORKDIR/samNyuWa2856.lst -c 1 -Oz -o $output/tmp.${chrom}.vcf.gz $input
+$path2bcftools +fill-tags --threads $PPN -Oz -o $output/${chrom}.vcf.gz $output/tmp.${chrom}.vcf.gz -- -t AC,AN,AF,MAF
+$TOOLDIR/htslib.1.14/bin/tabix -p vcf $output/${chrom}.vcf.gz
+rm $output/tmp.${chrom}.vcf.gz
+
+# world
+output=$WORKDIR/world/vcf/random1
+if [ ! -d $output ]; then mkdir -p $output; fi
+$path2bcftools view --threads $PPN -i 'INFO/PERIOD <= 6' -S $WORKDIR/samWorld.lst1 -c 1 -Oz -o $output/tmp.${chrom}.vcf.gz $input
+$path2bcftools +fill-tags --threads $PPN -Oz -o $output/${chrom}.vcf.gz $output/tmp.${chrom}.vcf.gz -- -t AC,AN,AF,MAF
+$TOOLDIR/htslib.1.14/bin/tabix -p vcf $output/${chrom}.vcf.gz
+rm $output/tmp.${chrom}.vcf.gz
+
+output=$WORKDIR/world/vcf/random2
+if [ ! -d $output ]; then mkdir -p $output; fi
+$path2bcftools view --threads $PPN -i 'INFO/PERIOD <= 6' -S $WORKDIR/samWorld.lst2 -c 1 -Oz -o $output/tmp.${chrom}.vcf.gz $input
+$path2bcftools +fill-tags --threads $PPN -Oz -o $output/${chrom}.vcf.gz $output/tmp.${chrom}.vcf.gz -- -t AC,AN,AF,MAF
+$TOOLDIR/htslib.1.14/bin/tabix -p vcf $output/${chrom}.vcf.gz
+rm $output/tmp.${chrom}.vcf.gz
+
+output=$WORKDIR/world/vcf/random3
+if [ ! -d $output ]; then mkdir -p $output; fi
+$path2bcftools view --threads $PPN -i 'INFO/PERIOD <= 6' -S $WORKDIR/samWorld.lst3 -c 1 -Oz -o $output/tmp.${chrom}.vcf.gz $input
+$path2bcftools +fill-tags --threads $PPN -Oz -o $output/${chrom}.vcf.gz $output/tmp.${chrom}.vcf.gz -- -t AC,AN,AF,MAF
+$TOOLDIR/htslib.1.14/bin/tabix -p vcf $output/${chrom}.vcf.gz
+rm $output/tmp.${chrom}.vcf.gz
+
+# EAS
+output=$WORKDIR/EAS/vcf/random1
+if [ ! -d $output ]; then mkdir -p $output; fi
+$path2bcftools view --threads $PPN -i 'INFO/PERIOD <= 6' -S $WORKDIR/samEAS.lst1 -c 1 -Oz -o $output/tmp.${chrom}.vcf.gz $input
+$path2bcftools +fill-tags --threads $PPN -Oz -o $output/${chrom}.vcf.gz $output/tmp.${chrom}.vcf.gz -- -t AC,AN,AF,MAF
+$TOOLDIR/htslib.1.14/bin/tabix -p vcf $output/${chrom}.vcf.gz
+rm $output/tmp.${chrom}.vcf.gz
+
+output=$WORKDIR/EAS/vcf/random2
+if [ ! -d $output ]; then mkdir -p $output; fi
+$path2bcftools view --threads $PPN -i 'INFO/PERIOD <= 6' -S $WORKDIR/samEAS.lst2 -c 1 -Oz -o $output/tmp.${chrom}.vcf.gz $input
+$path2bcftools +fill-tags --threads $PPN -Oz -o $output/${chrom}.vcf.gz $output/tmp.${chrom}.vcf.gz -- -t AC,AN,AF,MAF
+$TOOLDIR/htslib.1.14/bin/tabix -p vcf $output/${chrom}.vcf.gz
+rm $output/tmp.${chrom}.vcf.gz
+
+output=$WORKDIR/EAS/vcf/random3
+if [ ! -d $output ]; then mkdir -p $output; fi
+$path2bcftools view --threads $PPN -i 'INFO/PERIOD <= 6' -S $WORKDIR/samEAS.lst3 -c 1 -Oz -o $output/tmp.${chrom}.vcf.gz $input
+$path2bcftools +fill-tags --threads $PPN -Oz -o $output/${chrom}.vcf.gz $output/tmp.${chrom}.vcf.gz -- -t AC,AN,AF,MAF
+$TOOLDIR/htslib.1.14/bin/tabix -p vcf $output/${chrom}.vcf.gz
+rm $output/tmp.${chrom}.vcf.gz
+
+end_long_comment
+
+echo Finish time is `date +%Y/%m/%d--%H:%M`
+

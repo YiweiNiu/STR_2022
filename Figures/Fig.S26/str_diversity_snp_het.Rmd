@@ -1,0 +1,158 @@
+---
+title: "str_diversity_snp_het"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME = "str_diversity_snp_het"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+    if (before) {
+        print(paste("Start:", Sys.time()))
+        NOW <<- Sys.time()
+    } else {
+        print(paste("Stop:", Sys.time()))
+        print(Sys.time() - NOW)
+    }
+})
+
+knitr::opts_chunk$set(
+    autodep        = TRUE,
+    cache.lazy     = FALSE, 
+    cache.comments = FALSE,
+    echo           = TRUE,
+    error          = FALSE,
+    fig.align      = "center",
+    fig.width      = 10,
+    fig.height     = 8,
+    message        = FALSE,
+    warning        = FALSE,
+    timeit         = TRUE
+)
+```
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+library(ggpmisc)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+geom.text.size <- 7
+
+# heatmap
+library(pheatmap)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+Load sample info
+
+```{r load-sam-info, cache=FALSE, message=FALSE, warning=FALSE}
+sam_info = read_tsv(here::here('data', '220116_sample_info.GangSTR.txt')) %>%
+  dplyr::select(sample_old, dataset, super_pop, pop)
+```
+
+Load STR diversity
+
+```{r load-STR-diversity, cache=FALSE, message=FALSE, warning=FALSE}
+data_dir = '/niuyw-usb-disk/Projects/STR/STR_diversity_SNP_het'
+str_div = read_tsv(file.path(data_dir, 'str_diversity.txt'))
+```
+
+Load SNP het
+
+```{r load-SNP-het, cache=FALSE, message=FALSE, warning=FALSE}
+snp_het = read_tsv(file.path(data_dir, 'population_hete.tsv'))
+```
+
+## Neat
+
+Get population
+
+```{r ge-pop}
+pops = sam_info %>%
+  dplyr::select(super_pop, pop) %>%
+  distinct() %>%
+  dplyr::rename(population = pop)
+```
+
+Merge
+
+```{r merge}
+d4p = str_div %>%
+  left_join(snp_het, by = "population") %>%
+  left_join(pops, by = "population")
+```
+
+Stats
+
+```{r stats}
+cor.test(d4p$str_diversity, d4p$snp_heterozygosity)
+```
+
+## Plot
+
+```{r plot, fig.width=6, fig.height=6}
+my.formula <- y ~ x
+
+p = d4p %>%
+  ggplot(aes(x = snp_heterozygosity, y = str_diversity,
+             color = super_pop, label = population,
+             group = 1)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "lm", formula = my.formula,
+              se = FALSE) +
+  geom_text_repel(max.overlaps = 100) +
+  stat_poly_eq(formula = my.formula, 
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+                parse = TRUE) +
+  scale_color_manual(values = pop_color_maps) +
+  scale_x_continuous(labels = label_number()) +
+  scale_y_continuous(labels = label_comma()) +
+  labs(x = "SNP heterozygosity", y = "STR diversity", color = "Super Population") +
+  theme(legend.position = c(0.7, 0.2))
+p
+ggsave(p, filename = here::here("output", DOCNAME, 'str_diversity_snp_het.pdf'),
+       height = 6, width = 6)
+saveRDS(p, file = here::here("output", DOCNAME, 'str_diversity_snp_het.rds'))
+```
+
+## Save
+
+```{r save, cache=FALSE}
+saveRDS(d4p, file = here::here("output", DOCNAME, "d4p.rds"))
+```
+
+## Session info
+

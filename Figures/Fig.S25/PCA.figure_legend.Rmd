@@ -1,0 +1,181 @@
+---
+title: "PCA.figure_legend"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME = "PCA.figure_legend"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+    if (before) {
+        print(paste("Start:", Sys.time()))
+        NOW <<- Sys.time()
+    } else {
+        print(paste("Stop:", Sys.time()))
+        print(Sys.time() - NOW)
+    }
+})
+
+knitr::opts_chunk$set(
+    autodep        = TRUE,
+    cache.lazy     = FALSE, 
+    cache.comments = FALSE,
+    echo           = TRUE,
+    error          = FALSE,
+    fig.align      = "center",
+    fig.width      = 10,
+    fig.height     = 8,
+    message        = FALSE,
+    warning        = FALSE,
+    timeit         = TRUE
+)
+```
+
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+geom.text.size <- 7
+
+# heatmap
+library(pheatmap)
+
+# upset
+library(UpSetR)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+## Load data
+
+Load sample stat
+
+```{r load-sam-stat, message=FALSE, warning=FALSE}
+sam_stat = readRDS(here::here("output/sample_stat", "sam_stat.rds"))
+```
+
+## Plot
+
+AFR
+
+```{r fig.width=7, fig.height=2}
+p = sam_stat %>%
+  filter(spop == "AFR") %>%
+  ggplot(aes(x = tot, y = het, color = pop)) +
+  geom_point(shape = 7) +
+  scale_color_manual(values = pop_color_maps) +
+  guides(color = guide_legend(nrow = 1)) +
+  labs(color = "AFR") +
+  theme(legend.position = "top")
+p.afr = plot_grid(get_legend(p))
+p.afr
+```
+
+AMR
+
+```{r fig.width=7, fig.height=2}
+p = sam_stat %>%
+  filter(spop == "AMR") %>%
+  ggplot(aes(x = tot, y = het, color = pop)) +
+  geom_point(shape = 19) +
+  scale_color_manual(values = pop_color_maps) +
+  guides(color = guide_legend(nrow = 1)) +
+  labs(color = "AMR") +
+  theme(legend.position = "top")
+p.amr = plot_grid(get_legend(p))
+p.amr
+```
+
+EUR
+
+```{r fig.width=7, fig.height=2}
+p = sam_stat %>%
+  filter(spop == "EUR") %>%
+  ggplot(aes(x = tot, y = het, color = pop)) +
+  geom_point(shape = 15) +
+  scale_color_manual(values = pop_color_maps) +
+  guides(color = guide_legend(nrow = 1)) +
+  labs(color = "EUR") +
+  theme(legend.position = "top")
+p.eur = plot_grid(get_legend(p))
+p.eur
+```
+
+EAS
+
+```{r fig.width=7, fig.height=2}
+p = sam_stat %>%
+  filter(super_pop == "EAS") %>%
+  filter(!is.na(pop)) %>%
+  ggplot(aes(x = tot, y = het, color = pop)) +
+  geom_point(shape = 11) +
+  scale_color_manual(values = pop_color_maps) +
+  guides(color = guide_legend(nrow = 1)) +
+  labs(color = "EAS") +
+  theme(legend.position = "top")
+p.eas = plot_grid(get_legend(p))
+p.eas
+```
+
+SAS
+
+```{r fig.width=7, fig.height=2}
+p = sam_stat %>%
+  filter(spop == "SAS") %>%
+  ggplot(aes(x = tot, y = het, color = pop)) +
+  geom_point(shape = 17) +
+  scale_color_manual(values = pop_color_maps) +
+  guides(color = guide_legend(nrow = 1)) +
+  labs(color = "SAS") +
+  theme(legend.position = "top")
+p.sas = plot_grid(get_legend(p))
+p.sas
+```
+
+## Align
+
+```{r fig.width=7, fig.height=2}
+p = p.afr + p.amr + p.eur + p.eas + p.sas +
+  plot_layout(ncol = 1)
+p
+
+ggsave2(p, filename = here::here("output", DOCNAME, "Fig.PCA_legend.pdf"),
+        height = 2, width = 7)
+```
+
+## Session info
+
+

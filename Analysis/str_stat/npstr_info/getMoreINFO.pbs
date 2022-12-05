@@ -1,0 +1,33 @@
+#!/bin/bash
+#PBS -V
+#PBS -j eo
+#PBS -N chr22.getMoreINFO
+#PBS -q Fat
+#PBS -l nodes=1:ppn=1
+#PBS -d /home2/niuyw/project/STR/str_stat/npstr_info/logs
+
+# WORK DIR
+WORKDIR=/home2/niuyw/project/STR/str_stat/npstr_info
+
+# chrom
+chrom=chr22
+echo $chrom
+
+# PPN
+PPN=1
+
+# tools dir
+TOOLDIR=/home2/niuyw/software
+path2bcftools=$TOOLDIR/bcftools-1.14/bcftools
+export BCFTOOLS_PLUGINS=$TOOLDIR/bcftools-1.14/plugins
+
+echo Start time is `date +%Y/%m/%d--%H:%M`
+
+input=/home2/niuyw/project/STR/02_FilteredRaw220120_npSTR/${chrom}.npSTR.vcf.gz
+
+# dataset
+output=$WORKDIR/${chrom}.info.txt
+$path2bcftools query -H -f '%CHROM %POS %END %RU %PERIOD %INFO/REF %EXPTHRESH %HRUN\n' $input -o $output
+
+echo Finish time is `date +%Y/%m/%d--%H:%M`
+

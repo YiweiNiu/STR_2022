@@ -1,0 +1,533 @@
+---
+title: "sample_callrate"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME = "sample_callrate"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+    if (before) {
+        print(paste("Start:", Sys.time()))
+        NOW <<- Sys.time()
+    } else {
+        print(paste("Stop:", Sys.time()))
+        print(Sys.time() - NOW)
+    }
+})
+
+knitr::opts_chunk$set(
+    autodep        = TRUE,
+    cache.lazy     = FALSE, 
+    cache.comments = FALSE,
+    echo           = TRUE,
+    error          = FALSE,
+    fig.align      = "center",
+    fig.width      = 10,
+    fig.height     = 8,
+    message        = FALSE,
+    warning        = FALSE,
+    timeit         = TRUE
+)
+```
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# ggplot
+library(scales)
+library(ggside)
+library(ggpmisc)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+
+# heatmap
+library(pheatmap)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+Load sample info
+
+```{r load-sam-info, cache=FALSE, message=FALSE, warning=FALSE}
+sam_info = read_tsv(here::here('data', '220116_sample_info.GangSTR.txt'))
+```
+
+Load callrate
+
+```{r load-sam-callrate, cache=FALSE, warning=FALSE, message=FALSE}
+sam_callrate = read_tsv('/niuyw-usb-disk/Projects/STR/str_stat/sample_callrate.txt')
+```
+
+Load new sample coverage (by mosdepth)
+
+```{r load-sam-cov, cache=FALSE, warning=FALSE, message=FALSE}
+sam_cov = read_csv(here::here('data', 'sam8772.mosdepth.csv')) %>%
+  dplyr::select(sample_old = sam_old, coverage2 = depth.autosome)
+```
+
+## Neat
+
+```{r neat}
+d4p = sam_info %>%
+  left_join(sam_cov, by = "sample_old") %>%
+  left_join(sam_callrate, by = "sample_old") %>%
+  dplyr::select(-coverage) %>%
+  mutate(callrate = called/765227*100)
+```
+
+## Stat
+
+Cov
+
+```{r}
+# mean
+mean(d4p$coverage2)
+median(d4p$coverage2)
+sd(d4p$coverage2)
+# range
+range(d4p$coverage2)
+
+# mean by dataset
+d4p %>%
+  group_by(dataset) %>%
+  summarise(mean_cov = mean(coverage2),
+            median_cov = median(coverage2),
+            sd_cov = sd(coverage2))
+
+# range by dataset
+d4p %>%
+  group_by(dataset) %>%
+  summarise(r = range(coverage2))
+```
+
+The call rates of over 95% samples were larger than 95%.
+
+```{r}
+d4p %>%
+  mutate(lt90 = ifelse(callrate > 90, "Yes", "No")) %>%
+  group_by(lt90) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n))
+```
+
+Call rate
+
+```{r}
+mean(d4p$callrate)
+
+d4p %>%
+  group_by(dataset) %>%
+  summarise(m = mean(callrate))
+```
+
+Num called
+
+```{r}
+mean(d4p$called)
+
+d4p %>%
+  group_by(dataset) %>%
+  summarise(m = mean(called))
+```
+
+## Sample coverage {.tabset}
+
+### Histgram
+
+All samples
+
+```{r fig.width=3.5, fig.height=3}
+d4p %>%
+  ggplot(aes(x = coverage2)) +
+  geom_histogram(binwidth = 1) +
+  geom_vline(xintercept = 31.9, linetype = "dashed") +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Autosome coverage", y ="# of samples")
+```
+
+NyuWa
+
+```{r fig.width=3.5, fig.height=3}
+p.cov.NyuWa = d4p %>%
+  filter(dataset == 'NyuWa') %>%
+  ggplot(aes(x = coverage2)) +
+  geom_histogram(binwidth = 1) +
+  geom_vline(xintercept = 31.01	, linetype = "dashed") +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Autosome coverage", y ="# of samples")
+p.cov.NyuWa
+
+# save
+ggsave(p.cov.NyuWa, filename = here::here("output", DOCNAME, "Fig.cov.NyuWa.pdf"),
+       height = 3, width = 3.5)
+saveRDS(p.cov.NyuWa, file = here::here("output", DOCNAME, "Fig.cov.NyuWa.rds"))
+```
+
+1KGP
+
+```{r fig.width=3.5, fig.height=3}
+p.cov.1KGP = d4p %>%
+  filter(dataset == '1KGP') %>%
+  ggplot(aes(x = coverage2)) +
+  geom_histogram(binwidth = 1) +
+  geom_vline(xintercept = 32.54	, linetype = "dashed") +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Autosome coverage", y ="# of samples")
+p.cov.1KGP
+
+# save
+ggsave(p.cov.1KGP, filename = here::here("output", DOCNAME, "Fig.cov.1KGP.pdf"),
+       height = 3, width = 3.5)
+saveRDS(p.cov.1KGP, file = here::here("output", DOCNAME, "Fig.cov.1KGP.rds"))
+```
+
+### Density
+
+All samples
+
+```{r fig.width=3.5, fig.height=3}
+d4p %>%
+  ggplot(aes(x = coverage2, fill = dataset)) +
+  geom_density(alpha = .5) +
+  geom_vline(xintercept = c(31.01, 32.54), linetype = "dashed") +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Autosome coverage") +
+  scale_fill_manual(values = c("#7da1d5", "#bdde85")) +
+  theme(legend.position = c(0.7, 0.2))
+```
+
+NyuWa
+
+```{r fig.width=3.5, fig.height=3}
+p = d4p %>%
+  filter(dataset == 'NyuWa') %>%
+  ggplot(aes(x = coverage2)) +
+  geom_density(fill= "lightblue") +
+  geom_vline(xintercept = 31.01	, linetype = "dashed") +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Autosome coverage")
+p
+```
+
+1KGP
+
+```{r fig.width=3.5, fig.height=3}
+p = d4p %>%
+  filter(dataset == '1KGP') %>%
+  ggplot(aes(x = coverage2)) +
+  geom_density(fill= "lightblue") +
+  geom_vline(xintercept = 32.54	, linetype = "dashed") +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Autosome coverage")
+p
+```
+
+## Num called {.tabset}
+
+### Num called and coverage
+
+All
+
+```{r fig.width=3.5, fig.height=3}
+d4p %>%
+  ggplot(aes(x = coverage2, y = called, color = dataset)) +
+  geom_point_rast(size = 0.7, raster.dpi = 600) +
+  scale_color_manual(values = c("#7da1d5", "#bdde85")) +
+  scale_y_continuous(labels = label_comma()) +
+  labs(y = "# of called", x= "Autosome coverage") +
+  theme(legend.position = c(0.7, 0.2))
+```
+
+NyuWa
+
+```{r fig.width=3.5, fig.height=3}
+d4p %>%
+  filter(dataset == 'NyuWa') %>%
+  ggplot(aes(x = coverage2, y = called)) +
+  geom_point_rast(size = 0.7, raster.dpi = 600) +
+  scale_y_continuous(labels = label_comma()) +
+  labs(y = "# of called", x= "Autosome coverage")
+```
+
+1KGP
+
+```{r fig.width=3.5, fig.height=3}
+d4p %>%
+  filter(dataset == '1KGP') %>%
+  ggplot(aes(x = coverage2, y = called)) +
+  geom_point_rast(size = 0.7, raster.dpi = 600) +
+  scale_y_continuous(labels = label_comma()) +
+  labs(y = "# of called", x= "Autosome coverage")
+```
+
+### Density
+
+All
+
+```{r fig.width=3, fig.height=2.5}
+p = d4p %>%
+  ggplot(aes(x = called)) +
+  geom_density(fill= "lightblue") +
+  geom_rug(aes(x = called, y = 0), position = position_jitter(height = 0)) +
+  scale_x_continuous(expand = c(0, 0),
+                     labels = label_comma()) +
+  labs(x = "# of called")
+p
+```
+
+NyuWa
+
+```{r fig.width=4, fig.height=3.5}
+d4p %>%
+  filter(dataset == 'NyuWa') %>%
+  ggplot(aes(x = called)) +
+  geom_density(fill= "lightblue") +
+  geom_rug(aes(x = called, y = 0), position = position_jitter(height = 0)) +
+  scale_x_continuous(expand = c(0, 0),
+                     labels = label_comma()) +
+  labs(x = "# of called")
+```
+
+1KGP
+
+```{r fig.width=4, fig.height=3.5}
+d4p %>%
+  filter(dataset == '1KGP') %>%
+  ggplot(aes(x = called)) +
+  geom_density(fill= "lightblue") +
+  geom_rug(aes(x = called, y = 0), position = position_jitter(height = 0)) +
+  scale_x_continuous(expand = c(0, 0),
+                     labels = label_comma()) +
+  labs(x = "# of called")
+```
+
+### Histgram
+
+All
+
+```{r  fig.width=4, fig.height=3.5}
+d4p %>%
+  ggplot(aes(x = called)) +
+  geom_histogram() +
+  #scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "# of called", y ="# of samples")
+```
+
+NyuWa
+
+```{r fig.width=4, fig.height=3.5}
+d4p %>%
+  filter(dataset == 'NyuWa') %>%
+  ggplot(aes(x = called)) +
+  geom_histogram() +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "# of called", y ="# of samples")
+```
+
+1KGP
+
+```{r fig.width=3.5, fig.height=3}
+d4p %>%
+  filter(dataset == '1KGP') %>%
+  ggplot(aes(x = called)) +
+  geom_histogram() +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "# of called", y ="# of samples")
+```
+
+## Callrate {.tabset}
+
+### Callrate and coverage
+
+All
+
+```{r fig.width=3.5, fig.height=3}
+d4p %>%
+  ggplot(aes(x = coverage2, y = callrate, color = dataset)) +
+  geom_point_rast(size = 0.7, raster.dpi = 600) +
+  scale_color_manual(values = c("#7da1d5", "#bdde85")) +
+  labs(y = "Sample call rate (%)", x= "Autosome coverage") +
+  theme(legend.position = c(0.7, 0.2))
+```
+
+NyuWa
+
+```{r fig.width=3.5, fig.height=3}
+p.callrate_cov.NyuWa = d4p %>%
+  filter(dataset == 'NyuWa') %>%
+  ggplot(aes(x = coverage2, y = callrate)) +
+  geom_point_rast(size = 0.5, raster.dpi = 600, color = "#1f77b4") +
+  geom_xsideboxplot(aes(y = dataset), orientation = "y",
+                    outlier.size = 0.02, color = "#1f77b4") +
+  scale_xsidey_discrete(labels = NULL) +
+  geom_ysideboxplot(aes(x = dataset), orientation = "x",
+                    outlier.size = 0.02, color = "#1f77b4") +
+  scale_ysidex_discrete(guide = guide_axis(angle = 45),
+                        labels = NULL) +
+  stat_correlation(label.y = "bottom",
+                   label.x = "right") +
+  labs(y = "Sample call rate (%)", x= "Autosome coverage")
+p.callrate_cov.NyuWa
+```
+
+1KGP
+
+```{r fig.width=3.5, fig.height=3}
+p.callrate_cov.1KGP = d4p %>%
+  filter(dataset == '1KGP') %>%
+  ggplot(aes(x = coverage2, y = callrate)) +
+  geom_point_rast(size = 0.5, raster.dpi = 600, color = "#1f77b4") +
+  geom_xsideboxplot(aes(y = dataset), orientation = "y",
+                    outlier.size = 0.02, color = "#1f77b4") +
+  scale_xsidey_discrete(labels = NULL) +
+  geom_ysideboxplot(aes(x = dataset), orientation = "x",
+                    outlier.size = 0.02, color = "#1f77b4") +
+  scale_ysidex_discrete(guide = guide_axis(angle = 45),
+                        labels = NULL) +
+  stat_correlation(label.y = "bottom",
+                   label.x = "right") +
+  labs(y = "Sample call rate (%)", x= "Autosome coverage")
+p.callrate_cov.1KGP
+```
+
+### Density
+
+All
+
+```{r fig.width=3, fig.height=2.5}
+p = d4p %>%
+  ggplot(aes(x = callrate)) +
+  geom_density(fill= "lightblue") +
+  geom_rug(aes(x = callrate, y = 0), position = position_jitter(height = 0)) +
+  scale_x_continuous(expand = c(0, 0)) +
+  labs(x = "Call rate (%)")
+p
+ggsave(p, filename = here::here("output", DOCNAME, "sample_callrate.pdf"),
+       height = 3.5, width = 4)
+```
+
+NyuWa
+
+```{r fig.width=4, fig.height=3.5}
+d4p %>%
+  filter(dataset == 'NyuWa') %>%
+  ggplot(aes(x = callrate)) +
+  geom_density(fill= "lightblue") +
+  geom_rug(aes(x = callrate, y = 0), position = position_jitter(height = 0)) +
+  scale_x_continuous(expand = c(0, 0)) +
+  labs(x = "Call rate (%)")
+```
+
+1KGP
+
+```{r fig.width=4, fig.height=3.5}
+d4p %>%
+  filter(dataset == '1KGP') %>%
+  ggplot(aes(x = callrate)) +
+  geom_density(fill= "lightblue") +
+  geom_rug(aes(x = callrate, y = 0), position = position_jitter(height = 0)) +
+  scale_x_continuous(expand = c(0, 0)) +
+  labs(x = "Call rate (%)")
+```
+
+### Histgram
+
+All
+
+```{r  fig.width=4, fig.height=3.5}
+d4p %>%
+  ggplot(aes(x = callrate)) +
+  geom_histogram(binwidth=.05) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Call rate (%)", y ="# of samples")
+```
+
+NyuWa
+
+```{r fig.width=4, fig.height=3.5}
+d4p %>%
+  filter(dataset == 'NyuWa') %>%
+  ggplot(aes(x = callrate)) +
+  geom_histogram(binwidth=.05) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Call rate (%)", y ="# of samples")
+```
+
+1KGP
+
+```{r fig.width=4, fig.height=3.5}
+d4p %>%
+  filter(dataset == '1KGP') %>%
+  ggplot(aes(x = callrate)) +
+  geom_histogram(binwidth=.05, colour="black") +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Call rate (%)", y ="# of samples")
+```
+
+## Align plots
+
+### Coverage
+
+```{r fig.height=3, fig.width=6}
+p.cov = p.cov.NyuWa + p.cov.1KGP +
+  plot_layout(ncol = 2)
+p.cov
+
+# save
+ggsave(p.cov, filename = here::here("output", DOCNAME, "Fig.cov.NyuWa_1KGP.pdf"),
+       height = 3, width = 6)
+saveRDS(p.cov, file = here::here("output", DOCNAME, "Fig.cov.NyuWa_1KGP.rds"))
+```
+
+### Callrate and coverage
+
+```{r fig.height=3, fig.width=6}
+p.callrate_cov = p.callrate_cov.NyuWa + p.callrate_cov.1KGP +
+  plot_layout(ncol = 2)
+p.callrate_cov
+
+# save
+ggsave(p.callrate_cov, filename = here::here("output", DOCNAME, "Fig.callrate_cov.NyuWa_1KGP.pdf"),
+       height = 3, width = 6)
+saveRDS(p.callrate_cov, file = here::here("output", DOCNAME, "Fig.callrate_cov.NyuWa_1KGP.rds"))
+```
+
+## Save
+
+```{r save, cache=FALSE}
+saveRDS(d4p, file = here::here("output", DOCNAME, "sample_callrate.rds"))
+```
+
+## Session info
+
+

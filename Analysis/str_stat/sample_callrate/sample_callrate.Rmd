@@ -1,0 +1,225 @@
+---
+title: "sample_callrate"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME = "sample_callrate"
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+    if (before) {
+        print(paste("Start:", Sys.time()))
+        NOW <<- Sys.time()
+    } else {
+        print(paste("Stop:", Sys.time()))
+        print(Sys.time() - NOW)
+    }
+})
+
+knitr::opts_chunk$set(
+    autodep        = TRUE,
+    cache.lazy     = FALSE, 
+    cache.comments = FALSE,
+    echo           = TRUE,
+    error          = FALSE,
+    fig.align      = "center",
+    fig.width      = 10,
+    fig.height     = 8,
+    message        = FALSE,
+    warning        = FALSE,
+    timeit         = TRUE
+)
+```
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# ggplot
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+theme_set(theme_cowplot())
+
+# heatmap
+library(pheatmap)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+
+## pSTR, common, rare, very rare
+cPalette <- c("#7DA1D4", "#BEDE85", "#DCB070", "#EAAAB0")
+```
+
+Load sample info
+
+```{r load-sam-info, cache=FALSE, message=FALSE, warning=FALSE}
+sam_info = read_tsv('../../../samples/220116_sample_info.GangSTR.txt')
+```
+
+Load callrate
+
+```{r load-sam-callrate, cache=FALSE, warning=FALSE, message=FALSE}
+sam_callrate = read_tsv('sample_callrate.txt')
+```
+
+## Neat
+
+```{r neat}
+d4p = sam_info %>%
+  left_join(sam_callrate, by = "sample_old") %>%
+  mutate(callrate = called/784553*100)
+```
+
+## Stat
+
+The call rates of over 95% samples were larger than 95%.
+
+```{r}
+d4p %>%
+  mutate(lt90 = ifelse(callrate > 90, "Yes", "No")) %>%
+  group_by(lt90) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n/sum(n))
+```
+
+Cov
+
+```{r}
+d4p %>%
+  group_by(dataset) %>%
+  summarise(m_cov = mean(coverage))
+```
+
+## Plot
+
+### Correlation of callrate and coverage
+
+All
+
+```{r}
+d4p %>%
+  ggplot(aes(x = coverage, y = callrate, color = dataset)) +
+  geom_point() +
+  labs(y = "% of call rate", x= "coverage")
+```
+
+All (no color)
+
+```{r}
+d4p %>%
+  ggplot(aes(x = coverage, y = callrate)) +
+  geom_point() +
+  labs(y = "% of call rate", x= "coverage")
+```
+
+NyuWa
+
+```{r}
+d4p %>%
+  filter(dataset == 'NyuWa') %>%
+  ggplot(aes(x = coverage, y = callrate)) +
+  geom_point() +
+  labs(y = "% of call rate", x= "coverage")
+```
+
+1KGP
+
+```{r}
+d4p %>%
+  filter(dataset == '1KGP') %>%
+  ggplot(aes(x = coverage, y = callrate)) +
+  geom_point() +
+  labs(y = "% of call rate", x= "coverage")
+```
+
+### Density of callrate
+
+All
+
+```{r fig.width=3, fig.height=2.5}
+d4p %>%
+  ggplot(aes(x = callrate)) +
+  geom_density(fill= "lightblue") +
+  geom_rug(aes(x = callrate, y = 0), position = position_jitter(height = 0)) +
+  scale_x_continuous(expand = c(0, 0)) +
+  labs(x = "% of call rate")
+```
+
+NyuWa
+
+```{r}
+d4p %>%
+  filter(dataset == 'NyuWa') %>%
+  ggplot(aes(x = callrate)) +
+  geom_density(fill= "lightblue") +
+  geom_rug(aes(x = callrate, y = 0), position = position_jitter(height = 0)) +
+  scale_x_continuous(expand = c(0, 0)) +
+  labs(x = "% of call rate")
+```
+
+1KGP
+
+```{r}
+d4p %>%
+  filter(dataset == '1KGP') %>%
+  ggplot(aes(x = callrate)) +
+  geom_density(fill= "lightblue") +
+  geom_rug(aes(x = callrate, y = 0), position = position_jitter(height = 0)) +
+  scale_x_continuous(expand = c(0, 0)) +
+  labs(x = "% of call rate")
+```
+
+### Histgram
+
+All
+
+```{r}
+d4p %>%
+  ggplot(aes(x = callrate)) +
+  geom_histogram(binwidth=.05) +
+  #scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "% of call rate", y ="# of samples")
+```
+
+NyuWa
+
+```{r}
+d4p %>%
+  filter(dataset == 'NyuWa') %>%
+  ggplot(aes(x = callrate)) +
+  geom_histogram(binwidth=.05) +
+  scale_x_continuous(expand = c(0, 0)) +
+  labs(x = "% of call rate", y ="# of samples")
+```
+
+1KGP
+
+```{r}
+d4p %>%
+  filter(dataset == '1KGP') %>%
+  ggplot(aes(x = callrate)) +
+  geom_histogram(binwidth=.05, colour="black") +
+  scale_x_continuous(expand = c(0, 0)) +
+  labs(x = "% of call rate", y ="# of samples")
+```
+
+## Session info
+
+```{r session}
+sessionInfo()
+```
+

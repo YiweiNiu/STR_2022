@@ -1,0 +1,256 @@
+---
+title: "eSTR.preprocess_exp"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "eSTR.preprocess_exp"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+- 处理 Geuvadis 项目的 RNA-seq 数据
+
+- 用于 eQTL 分析
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 12, # axis.title
+  rel_small = 10 / 12, # axis.text
+  rel_tiny = 9 / 12,
+  rel_large = 12 / 12
+))
+
+# heatmap
+library(pheatmap)
+library(corrplot)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+
+# RNA-seq
+library(SummarizedExperiment)
+library(edgeR)
+library(iasva)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+Load PCA eigenvec
+
+```{r load-eigenvec, cache=FALSE, warning=FALSE, message=FALSE}
+pop_pc10 <- read_delim("/niuyw-usb-disk/Projects/Geuvadis/geno_pca/autosome_maf0.05_pca.eigenvec",
+  delim = " ",
+  col_names = FALSE
+) %>%
+  dplyr::select(-X2)
+```
+
+Load count data (462 samples)
+
+```{r load-count, cache=FALSE, warning=FALSE, message=FALSE}
+x <- readRDS("/niuyw-usb-disk/Projects/Geuvadis/count/Geuvadis.x.rds")
+dim(x)
+```
+
+Load sample info
+
+```{r load-sam-info, message=FALSE, warning=FALSE, cache=FALSE}
+sam_info <- read_tsv("/niuyw-usb-disk/Projects/Geuvadis/count/targets.txt") %>%
+  column_to_rownames("sample")
+```
+
+## Neat
+
+Filter samples
+
+```{r filter-samples}
+sam_info <- sam_info[pop_pc10$X1, ]
+table(sam_info$sex)
+table(sam_info$pop)
+table(sam_info$spop)
+```
+
+Filter exp
+
+```{r filter-exp}
+x <- x[, pop_pc10$X1]
+
+keep <- filterByExpr(x)
+table(keep)
+x <- x[keep, , keep.lib.sizes = FALSE]
+dim(x)
+```
+
+Get log2 FPKM
+
+```{r get-log-fpkm}
+# TMM normalization
+x <- calcNormFactors(x)
+log_fpkm <- rpkm(x, x$genes$Length, prior.count = 1, log = T)
+log_fpkm[1:3, 1:3]
+```
+
+## Run IA-SVA
+
+With the following covariates
+
+- sex
+
+- 10 PCs for population structure
+
+```{r run-iasva}
+set.seed(100)
+
+# known factors
+mod <- model.matrix(~ sam_info$sex +
+  pop_pc10$X3 + pop_pc10$X4 + pop_pc10$X5 + pop_pc10$X6 + pop_pc10$X7 +
+  pop_pc10$X8 + pop_pc10$X9 + pop_pc10$X10 + pop_pc10$X11 + pop_pc10$X12)
+
+# create a summarizedexperiment class
+summ_exp <- SummarizedExperiment(assays = log_fpkm)
+
+# run
+iasva.res <- iasva(summ_exp, mod[, -1],
+  verbose = FALSE,
+  permute = FALSE, num.sv = 20
+)
+```
+
+## Plot
+
+Get res
+
+```{r get-res}
+iasva.sv <- iasva.res$sv
+iasva.sv[1:3, 1:3]
+```
+
+Correlation of SVs
+
+```{r , fig.width=4, fig.height=5}
+corrplot(cor(iasva.sv), type = "lower",
+         method = "square", tl.cex = 0.8)
+pdf(here::here("output", DOCNAME, "Fig.iasva_sv.corrplot.pdf"),
+    height = 5, width = 4)
+corrplot(cor(iasva.sv), type = "lower", method = "square", tl.cex = 0.8)
+dev.off()
+```
+
+Plot SVs
+
+```{r , fig.width=3.5, fig.height=5}
+d4p = cbind(sam_info, as.data.frame(iasva.sv))
+
+p.SV1SV2 = d4p %>%
+  ggplot(aes(x = SV1, y = SV2, color = pop)) +
+  geom_point_rast() +
+  scale_color_jco()
+p.SV3SV4 = d4p %>%
+  ggplot(aes(x = SV3, y = SV4, color = pop)) +
+  geom_point_rast() +
+  scale_color_jco()
+
+p.SV.sample_scatter = p.SV1SV2 + p.SV3SV4 +
+  plot_layout(guides = "collect", ncol = 1)
+p.SV.sample_scatter
+ggsave(p.SV.sample_scatter, filename = here::here("output", DOCNAME, "Fig.iasva_sv.sample_scatter.pdf"),
+       height = 5, width = 3.5)
+saveRDS(p.SV.sample_scatter, file = here::here("output", DOCNAME, "Fig.iasva_sv.sample_scatter.rds"))
+```
+
+## Adjust exp
+
+Prepare dat for linear model
+
+```{r prepare-dat}
+# exp
+dat <- as.data.frame(t(log_fpkm))
+# PCA
+dat <- cbind(pop_pc10[, -1], dat)
+colnames(dat)[1:10] <- paste0("PC", 1:10)
+# sex
+dat$sex <- sam_info$sex
+# SV
+dat <- cbind(dat, as.data.frame(iasva.sv[, 1:15]))
+```
+
+Linear model to adjust
+
+```{r linear-model}
+# genes
+genes <- rownames(log_fpkm)
+
+# formula
+univ_formulas <- sapply(genes, function(y) {
+  as.formula(paste0(y, " ~ sex+PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+SV1+SV2+SV3+SV4+SV5+SV6+SV7+SV8+SV9+SV10+SV11+SV12+SV13+SV14+SV15"))
+})
+
+# adjust exp
+dat_adj <- sapply(univ_formulas, function(f) {
+  # print(x)
+  lm.res <- lm(f, data = dat)
+  lm.res$residuals
+})
+
+# to data.frame
+dat_adj = as.data.frame(dat_adj)
+dat_adj[1:3, 1:3]
+```
+
+## Save
+
+```{r save, cache=FALSE, eval=FALSE}
+saveRDS(x, file = here::here("output", DOCNAME, "Geuvadis.x_tmm.445.rds"))
+saveRDS(iasva.res, file = here::here("output", DOCNAME, "Geuvadis.iasva.res.rds"))
+saveRDS(dat_adj, file = here::here("output", DOCNAME, "Geuvadis.exp_adjusted.rds"))
+```
+

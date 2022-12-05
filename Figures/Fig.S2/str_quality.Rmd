@@ -1,0 +1,364 @@
+---
+title: "str_quality"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "str_quality"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(grid)
+library(ggpubr)
+library(scales)
+library(ggside)
+library(ggpmisc)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+
+# align
+library(patchwork)
+library(cowplot)
+
+# theme
+theme_set(theme_cowplot(
+  font_size = 10, # Overall font size
+  rel_small = 10 / 10, # axis tick labels
+  rel_tiny = 8 / 10, # caption
+  rel_large = 10 / 10 # title
+))
+geom.text.size <- 7
+
+# heatmap
+library(pheatmap)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+source(here::here("code/geom_boxplot2.R"))
+```
+
+Mendelian inheritance rate
+
+```{r load-Mendelian-info, message=FALSE, warning=FALSE}
+tmp1 <- read_delim("/niuyw-usb-disk/Projects/STR/str_info/total_stat_gt.txt",
+  delim = " ", col_names = FALSE
+)
+colnames(tmp1) <- c("sample", "Raw")
+tmp2 <- read_delim("/niuyw-usb-disk/Projects/STR/str_info/total_stat_gt_dump.txt",
+  delim = " ", col_names = FALSE
+)
+colnames(tmp2) <- c("sample", "Filtered")
+mendelian <- tmp1 %>%
+  left_join(tmp2, by = "sample") %>%
+  pivot_longer(cols = c("Raw", "Filtered")) %>%
+  mutate(name = factor(name, levels = c("Raw", "Filtered")))
+```
+
+Load loci info
+
+```{r load-str-info, message=FALSE, warning=FALSE}
+str_info <- read_tsv("/niuyw-usb-disk/Projects/STR/str_info/loci_info_total.txt") %>%
+  dplyr::select(chrom, start, motif, ref_genotype, numcalled)
+```
+
+Loci quality
+
+```{r load-str-Q, message=FALSE, warning=FALSE}
+str_q <- read_delim("/niuyw-usb-disk/Projects/STR/str_info/quality-loci.txt",
+  delim = " ", col_names = FALSE
+)
+colnames(str_q) <- c("site", "period", "Q")
+```
+
+Sample quality
+
+```{r load-sample-Q, message=FALSE, warning=FALSE}
+sample_q <- read_delim("/niuyw-usb-disk/Projects/STR/str_info/quality-sample.txt",
+  delim = " ", col_names = FALSE
+)
+colnames(sample_q) <- c("sample", "Q")
+```
+
+Mean diff from ref by reference allele length
+
+```{r load-diff-from-ref, message=FALSE, warning=FALSE}
+diff_refByRefLen <- read_delim("/niuyw-usb-disk/Projects/STR/str_info/diff-from-ref.txt",
+  delim = " ", col_names = FALSE
+)
+colnames(diff_refByRefLen) <- c("ref_len", "diff")
+```
+
+## Neat
+
+```{r neat}
+str_info <- str_info %>%
+  mutate(
+    callrate = numcalled / 6487 * 100, # callrate of loci
+    ref_len = str_length(ref_genotype), # ref allele length
+    period = str_length(motif) # period
+  ) %>%
+  dplyr::select(-ref_genotype, -numcalled, -motif)
+```
+
+## Mendelian
+
+60 samples included
+
+```{r mendelian-stats}
+mendelian %>%
+  group_by(name) %>%
+  summarise(m = mean(value))
+```
+
+Plot
+
+```{r mendelian, fig.width=1.6, fig.height=3}
+p.mendelian <- mendelian %>%
+  ggplot(aes(x = name, y = value, fill = name)) +
+  geom_boxplot_jitter(
+    linetype = "dashed", outlier.size = .01,
+    width = .4,
+    position = position_dodge(1),
+    outlier.jitter.width = 0.02
+  ) +
+  stat_boxplot(aes(ymin = ..lower.., ymax = ..upper..),
+    outlier.size = .01,
+    position = position_dodge(1)
+  ) +
+  stat_boxplot(
+    geom = "errorbar", aes(ymin = ..ymax..),
+    width = .3,
+    position = position_dodge(1)
+  ) +
+  stat_boxplot(
+    geom = "errorbar", aes(ymax = ..ymin..),
+    width = .3,
+    position = position_dodge(1)
+  ) +
+  ylim(0.875, 1) +
+  labs(x = NULL, y = "Mendelian inheritance rate") +
+  theme(legend.position = "none")
+p.mendelian
+
+ggsave(p.mendelian,
+  filename = here::here("output", DOCNAME, "Fig.mendelian.pdf"),
+  height = 3, width = 6
+)
+saveRDS(p.mendelian, file = here::here("output", DOCNAME, "Fig.mendelian.rds"))
+```
+
+## Loci call rate
+
+Mean call rate: 98.30485
+
+```{r callrate, fig.width=3, fig.height=3}
+mean(str_info$callrate)
+p.str_callrate <- str_info %>%
+  ggplot(aes(x = callrate)) +
+  geom_histogram(binwidth = 1, fill = "#1f77b4") +
+  geom_vline(xintercept = mean(str_info$callrate), linetype = "dashed") +
+  scale_y_log10(
+    expand = c(0, 0),
+    breaks = trans_breaks("log10", function(x) 10^x),
+    labels = trans_format("log10", math_format(10^.x))
+  ) +
+  labs(x = "Loci call rate (%)", y = "# of pSTR")
+p.str_callrate
+
+ggsave(p.str_callrate,
+  filename = here::here("output", DOCNAME, "Fig.str_callrate.pdf"),
+  height = 3, width = 3
+)
+saveRDS(p.str_callrate, file = here::here("output", DOCNAME, "Fig.str_callrate.rds"))
+```
+
+Call rate by ref allele length
+
+Only 43 sites with reference length > 60bp
+
+```{r callrate_byRefLen, fig.width=2.5, fig.height=3}
+d4p = str_info %>%
+  mutate(bin = cut(ref_len, c(0, 10, 20, 30, 40, 60, Inf),
+    labels = c("10", "20", "30", "40", "60", ">60"),
+    include.lowest = FALSE
+  ))
+table(d4p$bin)
+
+p.str_callrate_byRefLen = d4p %>%
+  ggplot(aes(x = bin, y = callrate, color = bin)) +
+  geom_boxplot2(width = 0.5, width.errorbar = 0.3) +
+  scale_color_jama() +
+  labs(x = "Reference length (bp)", y = "Loci call rate (%)") +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 60, hjust = 1))
+p.str_callrate_byRefLen
+
+ggsave(p.str_callrate_byRefLen,
+  filename = here::here("output", DOCNAME, "Fig.str_callrate_byRefLen.pdf"),
+  height = 3, width = 2.5
+)
+saveRDS(p.str_callrate_byRefLen, file = here::here("output", DOCNAME, "Fig.str_callrate_byRefLen.rds"))
+```
+
+## diff_ref by ref_len
+
+```{r}
+DT::datatable(diff_refByRefLen)
+```
+
+
+Only 43 sites with reference length > 60bp
+
+```{r diff_refByRefLen, fig.width=3, fig.height=3}
+p.diff_refByRefLen = diff_refByRefLen %>%
+  ggplot(aes(x = ref_len, y = diff)) +
+  geom_line(color = "#1f77b4") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = 40, linetype = "dashed") +
+  xlim(0, 60) +
+  labs(x = "Reference length (bp)", y = "Mean diff from ref (bp)")
+p.diff_refByRefLen
+
+ggsave(p.diff_refByRefLen,
+  filename = here::here("output", DOCNAME, "Fig.diff_refByRefLen.pdf"),
+  height = 3, width = 3
+)
+saveRDS(p.diff_refByRefLen, file = here::here("output", DOCNAME, "Fig.diff_refByRefLen.rds"))
+```
+
+## Sample quality
+
+```{r sample_q, fig.width=3, fig.height=3}
+p.quality_sam <- sample_q %>%
+  arrange(Q) %>%
+  mutate(n = length(Q):1) %>%
+  mutate(prop = n / 6487 * 100) %>%
+  ggplot(aes(x = Q, y = prop)) +
+  geom_line(color = "blue") +
+  labs(x = "Mean quality score across all loci", y = "% of samples with at least this quality")
+p.quality_sam
+
+ggsave(p.quality_sam,
+  filename = here::here("output", DOCNAME, "Fig.quality_sam.pdf"),
+  height = 3, width = 3
+)
+saveRDS(p.quality_sam, file = here::here("output", DOCNAME, "Fig.quality_sam.rds"))
+```
+
+## Loci quality
+
+Over 99% loci have Quality Score (posterior probability) > 0.9.
+
+```{r str_q, fig.width=3, fig.height=3}
+p.quality_loci <- str_q %>%
+  arrange(Q) %>%
+  mutate(n = length(Q):1) %>%
+  mutate(prop = n / 366013 * 100) %>%
+  ggplot(aes(x = Q, y = prop)) +
+  geom_line(color = "#1f77b4") +
+  geom_vline(xintercept = 0.9, linetype = "dashed") +
+  labs(x = "Quality score of call", y = "% of loci with at least this quality")
+p.quality_loci
+
+ggsave(p.quality_loci,
+  filename = here::here("output", DOCNAME, "Fig.quality_loci.pdf"),
+  height = 3, width = 3
+)
+saveRDS(p.quality_loci, file = here::here("output", DOCNAME, "Fig.quality_loci.rds"))
+```
+
+## Align plots
+
+Load sample call rate
+
+```{r load-p.callrate_cov}
+p.callrate_cov = readRDS(here::here("output/sample_callrate/Fig.callrate_cov.NyuWa_1KGP.rds"))
+```
+
+Line 1
+
+```{r p1, fig.width=7.5, fig.height=3}
+p1 = p.callrate_cov + p.mendelian +
+  plot_layout(ncol = 3, widths = c(3, 3, 1.5))
+p1
+```
+
+Line 2
+
+```{r p2, fig.width=7.5, fig.height=2.6}
+p2 = p.str_callrate + p.str_callrate_byRefLen + p.diff_refByRefLen +
+  plot_layout(ncol = 3)
+p2
+```
+
+Line 3
+
+```{r p3, fig.width=7.5, fig.height=2.6}
+p3 = p.quality_sam + p.quality_loci +
+  plot_layout(ncol = 2)
+p3
+```
+
+Figure S1
+
+```{r S1, fig.width=7.5, fig.height=8.2}
+p.S1 = p1/p2/p3 +
+  plot_layout(heights = c(3, 2.6, 2.6))
+p.S1
+
+ggsave(p.S1,
+  filename = here::here("output", DOCNAME, "Fig.callset_quality.pdf"),
+  height = 8.2, width = 7.5
+)
+saveRDS(p.S1, file = here::here("output", DOCNAME, "Fig.callset_quality.rds"))
+```
+
+
+## Session info
+
+

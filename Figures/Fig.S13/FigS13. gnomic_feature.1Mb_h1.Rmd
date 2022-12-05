@@ -1,0 +1,358 @@
+
+## Setup
+
+#Load packages
+
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(corrplot)
+library(ggcorrplot)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 12, # axis.title
+  rel_small = 10 / 12, # axis.text
+  rel_tiny = 9 / 12,
+  rel_large = 12 / 12
+))
+
+# cmplot
+library(CMplot)
+
+# heatmap
+library(pheatmap)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+
+# data.table
+library(data.table)
+
+## Load data
+
+#pSTR
+
+pSTR <- read_tsv("pSTR.count",
+  col_names = FALSE,
+  col_types = cols(
+    X1 = "c", X2 = "c", X3 = "c",
+    X4 = "d", X5 = "d", X6 = "d", X7 = "d", X8 = "d", X9 = "d"
+  )
+) %>%
+  tidyr::unite("region", c("X1", "X2", "X3"), sep = ":") %>%
+  dplyr::rename(pSTR = X4, pSTR.period_2 = X5, pSTR.period_3 = X6,
+                pSTR.period_4 = X7, pSTR.period_5 = X8, pSTR.period_6 = X9)
+
+#mSTR
+
+mSTR <- read_tsv("npSTR.count",
+  col_names = FALSE,
+  col_types = cols(
+    X1 = "c", X2 = "c", X3 = "c",
+    X4 = "d", X5 = "d", X6 = "d", X7 = "d", X8 = "d", X9 = "d"
+  )
+) %>%
+  tidyr::unite("region", c("X1", "X2", "X3"), sep = ":") %>%
+  dplyr::rename(mSTR = X4, mSTR.period_2 = X5, mSTR.period_3 = X6,
+                mSTR.period_4 = X7, mSTR.period_5 = X8, mSTR.period_6 = X9)
+
+#Compartment
+
+compart_scores <- read_tsv("compart_scores.1M.txt",
+  col_names = FALSE,
+  col_types = cols(
+    X1 = "c", X2 = "c", X3 = "c",
+    X4 = "d", X5 = "d"
+  )
+) %>%
+  tidyr::unite("region", c("X1", "X2", "X3"), sep = ":") %>%
+  dplyr::rename(Compartment.DSG = X4, Compartment.FA = X5) %>%
+  filter(region %in% pSTR$region)
+
+#Replication timing
+
+repli <- read_tsv("H1.repli.1M.bdg",
+  col_names = FALSE,
+  col_types = cols(
+    X1 = "c", X2 = "c", X3 = "c",
+    X4 = "d"
+  )
+) %>%
+  tidyr::unite("region", c("X1", "X2", "X3"), sep = ":") %>%
+  dplyr::rename(Early.RT = X4) %>%
+  filter(region %in% pSTR$region)
+
+#DNA methylation
+
+methy.cpg <- read_tsv("H1.CpG.autosomes.1M.bdg",
+  col_names = FALSE,
+  col_types = cols(
+    X1 = "c", X2 = "c", X3 = "c",
+    X4 = "d"
+  )
+) %>%
+  tidyr::unite("region", c("X1", "X2", "X3"), sep = ":") %>%
+  dplyr::rename(CpG.methylation = X4) %>%
+  filter(region %in% pSTR$region)
+methy.chg <- read_tsv("H1.CHG.autosomes.1M.bdg",
+  col_names = FALSE,
+  col_types = cols(
+    X1 = "c", X2 = "c", X3 = "c",
+    X4 = "d"
+  )
+) %>%
+  tidyr::unite("region", c("X1", "X2", "X3"), sep = ":") %>%
+  dplyr::rename(CHG.methylation = X4) %>%
+  filter(region %in% pSTR$region)
+methy.chh <- read_tsv("H1.CHH.autosomes.1M.bdg",
+  col_names = FALSE,
+  col_types = cols(
+    X1 = "c", X2 = "c", X3 = "c",
+    X4 = "d"
+  )
+) %>%
+  tidyr::unite("region", c("X1", "X2", "X3"), sep = ":") %>%
+  dplyr::rename(CHH.methylation = X4) %>%
+  filter(region %in% pSTR$region)
+
+#Other count
+
+tags <- c(
+  "all_gene", "CpG", "GC_percent", "CTCF", "DHS", "EP300", "H2AK5ac", "H2BK120ac", "H2BK12ac",
+  "H2BK15ac", "H2BK20ac", "H2BK5ac", "H3K14ac", "H3K18ac", "H3K23ac", "H3K23me2", "H3K27ac",
+  "H3K27me3", "H3K36me3", "H3K4ac", "H3K4me1", "H3K4me2", "H3K4me3", "H3K56ac", "H3K79me1",
+  "H3K79me2", "H3K9ac", "H3K9me3", "H4K20me1", "H4K5ac", "H4K8ac", "H4K91ac", "pcg",
+  "POLR2A", "POLR2AphosphoS5"
+)
+# rename
+tags_rename <- c(
+  "Gene.count", "CpG.count", "GC.percent", "CTCF", "DHS", "EP300", "H2AK5ac", "H2BK120ac",
+  "H2BK12ac", "H2BK15ac", "H2BK20ac", "H2BK5ac", "H3K14ac", "H3K18ac", "H3K23ac", "H3K23me2",
+  "H3K27ac", "H3K27me3", "H3K36me3", "H3K4ac", "H3K4me1", "H3K4me2", "H3K4me3", "H3K56ac",
+  "H3K79me1", "H3K79me2", "H3K9ac", "H3K9me3", "H4K20me1", "H4K5ac", "H4K8ac", "H4K91ac",
+  "PCG.count", "POLR2A", "POLR2AphosphoS5"
+)
+
+count_lst <- lapply(tags, function(i) {
+  read_tsv(paste0(i, ".count"),
+    col_names = FALSE,
+    col_types = cols(X1 = "c", X2 = "c", X3 = "c", X4 = "d")
+  ) %>%
+    pull(X4)
+})
+
+df.count <- as.data.frame(do.call(cbind, count_lst))
+colnames(df.count) <- tags_rename
+df.count$region <- pSTR$region
+
+## Neat
+
+#pSTR and all
+
+d4p.pSTR.all <- pSTR %>%
+  left_join(df.count, by = "region") %>%
+  left_join(compart_scores, by = "region") %>%
+  left_join(repli, by = "region") %>%
+  left_join(methy.cpg, by = "region") %>%
+  left_join(methy.chg, by = "region") %>%
+  left_join(methy.chh, by = "region")
+d4p.pSTR.all <- na.omit(d4p.pSTR.all)
+
+#mSTR and all
+
+d4p.mSTR.all <- mSTR %>%
+  left_join(df.count, by = "region") %>%
+  left_join(compart_scores, by = "region") %>%
+  left_join(repli, by = "region") %>%
+  left_join(methy.cpg, by = "region") %>%
+  left_join(methy.chg, by = "region") %>%
+  left_join(methy.chh, by = "region")
+d4p.mSTR.all <- na.omit(d4p.mSTR.all)
+
+## pSTR {.tabset}
+
+### Selected
+
+#pheatmap
+
+paletteLength <- 100
+myColor <- colorRampPalette(c("#476fa9", "#ffffff", "#ca3226"))(paletteLength)
+# length(breaks) == length(paletteLength) + 1
+# use floor and ceiling to deal with even/odd length pallettelengths
+myBreaks <- c(
+  seq(-1, 0, length.out = ceiling(paletteLength / 2) + 1),
+  seq(1 / paletteLength, 1, length.out = floor(paletteLength / 2))
+)
+
+# rename
+tags_selected <- c(
+  "region", "H3K27me3", "H3K27ac", "H3K36me3", "Compartment.FA", "CTCF", "CpG.count",
+  "GC.percent", "Gene.count", "DHS", "H3K4me3", "Early.RT", "POLR2A",
+  "H3K9ac", "CpG.methylation", "CHG.methylation", "CHH.methylation", "H3K9me3",
+  "pSTR", "pSTR.period_2", "pSTR.period_3", "pSTR.period_4", "pSTR.period_5", "pSTR.period_6"
+)
+d4p.pSTR.selected <- d4p.pSTR.all[, tags_selected]
+
+cor_dat <- d4p.pSTR.selected %>%
+  column_to_rownames("region") %>%
+  cor(method = "spearman")
+
+dist_dat <- as.dist(1 - cor_dat)
+hc <- hclust(dist_dat, method = "complete")
+labels <- hc$labels[hc$order]
+
+pheatmap(cor_dat[labels, labels],
+  cluster_rows = F, cluster_cols = F,
+  fontsize = 8, treeheight_row = 3, treeheight_col = 3,
+  color = myColor, breaks = myBreaks,
+  border_color = NA
+)
+
+#corrplot
+
+col <- colorRampPalette(c("#4477AA", "#77AADD", "#FFFFFF", "#EE9988", "#BB4444"))
+corrplot(cor_dat[labels, labels],
+  type = "lower",
+  method = "square",
+  diag = FALSE,
+  col = col(200),
+  tl.cex = 0.7,
+  tl.col = "black"
+)
+
+pdf("Fig.pSTR_cor_genomic_features.pdf",
+    height = 4, width = 6.5)
+corrplot(cor_dat[labels, labels],
+  type = "lower",
+  method = "square",
+  diag = FALSE,
+  col = col(200),
+  tl.cex = 0.7,
+  tl.col = "black"
+)
+dev.off()
+
+### All
+
+#pheatmap
+
+cor_dat <- d4p.pSTR.all %>%
+  column_to_rownames("region") %>%
+  cor(method = "spearman")
+
+dist_dat <- as.dist(1 - cor_dat)
+hc <- hclust(dist_dat, method = "complete")
+labels <- hc$labels[hc$order]
+pheatmap(cor_dat[labels, labels],
+  cluster_rows = F, cluster_cols = F,
+  fontsize = 8, treeheight_row = 3, treeheight_col = 3,
+  color = myColor, breaks = myBreaks,
+  border_color = NA
+)
+
+#corrplot
+
+col <- colorRampPalette(c("#4477AA", "#77AADD", "#FFFFFF", "#EE9988", "#BB4444"))
+corrplot(cor_dat[labels, labels],
+  type = "lower",
+  method = "square",
+  diag = FALSE,
+  col = col(200),
+  tl.cex = 0.5,
+  tl.col = "black"
+)
+
+## mSTR {.tabset}
+
+### Selected
+
+#pheatmap
+
+# rename
+tags_selected <- c(
+  "region", "H3K27me3", "H3K27ac", "H3K36me3", "Compartment.FA", "CTCF", "CpG.count",
+  "GC.percent", "Gene.count", "DHS", "H3K4me3", "Early.RT", "POLR2A",
+  "H3K9ac", "CpG.methylation", "CHG.methylation", "CHH.methylation", "H3K9me3",
+  "mSTR", "mSTR.period_2", "mSTR.period_3", "mSTR.period_4", "mSTR.period_5", "mSTR.period_6"
+)
+d4p.mSTR.selected <- d4p.mSTR.all[, tags_selected]
+
+cor_dat <- d4p.mSTR.selected %>%
+  column_to_rownames("region") %>%
+  cor(method = "spearman")
+
+dist_dat <- as.dist(1 - cor_dat)
+hc <- hclust(dist_dat, method = "complete")
+labels <- c("mSTR.period_3","mSTR.period_5","mSTR","mSTR.period_4","Compartment.FA","mSTR.period_6","H3K27me3","H3K36me3", "POLR2A","H3K9ac","H3K27ac","Early.RT","Gene.count", "CpG.count","H3K4me3", "GC.percent","CTCF","DHS","H3K9me3","CHG.methylation", "CHH.methylation","CpG.methylation","mSTR.period_2")
+
+pheatmap(cor_dat[labels, labels],
+  cluster_rows = F, cluster_cols = F,
+  fontsize = 8, treeheight_row = 3, treeheight_col = 3,
+  color = myColor, breaks = myBreaks,
+  border_color = NA
+)
+
+#corrplot
+
+col <- colorRampPalette(c("#4477AA", "#77AADD", "#FFFFFF", "#EE9988", "#BB4444"))
+corrplot(cor_dat[labels, labels],
+  type = "lower",
+  method = "square",
+  diag = FALSE,
+  col = col(200),
+  tl.cex = 0.7,
+  tl.col = "black"
+)
+
+pdf("Fig.mSTR_cor_genomic_features.pdf",
+    height = 4, width = 6.5)
+corrplot(cor_dat[labels, labels],
+  type = "lower",
+  method = "square",
+  diag = FALSE,
+  col = col(200),
+  tl.cex = 0.7,
+  tl.col = "black"
+)
+dev.off()
+
+### All
+
+#pheatmap
+
+cor_dat <- d4p.mSTR.all %>%
+  column_to_rownames("region") %>%
+  cor(method = "spearman")
+
+dist_dat <- as.dist(1 - cor_dat)
+hc <- hclust(dist_dat, method = "complete")
+labels <- hc$labels[hc$order]
+pheatmap(cor_dat[labels, labels],
+  cluster_rows = F, cluster_cols = F,
+  fontsize = 8, treeheight_row = 3, treeheight_col = 3,
+  color = myColor, breaks = myBreaks,
+  border_color = NA
+)
+
+#corrplot
+
+col <- colorRampPalette(c("#4477AA", "#77AADD", "#FFFFFF", "#EE9988", "#BB4444"))
+corrplot(cor_dat[labels, labels],
+  type = "lower",
+  method = "square",
+  diag = FALSE,
+  col = col(200),
+  tl.cex = 0.7,
+  tl.col = "black"
+)
+
+## Session info
+

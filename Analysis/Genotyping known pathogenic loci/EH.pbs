@@ -1,0 +1,46 @@
+#!/bin/bash
+#PBS -V
+#PBS -j eo
+#PBS -N HG00315.EH
+#PBS -q Fat
+#PBS -l nodes=1:ppn=1
+#PBS -d /home2/niuyw/project/STR/ExpansionHunter/logs
+
+# WORKDIR
+WORKDIR=/home2/niuyw/project/STR/ExpansionHunter
+PPN=1
+
+# sample
+#sample=HG00315
+echo $sample
+#sex=female
+echo $sex
+#bam=/Parastor300s_G30S/Resources/1KG_bam/HG00315.final.bam
+echo $bam
+
+# genome and annotations
+ANNODIR=/home2/niuyw/RefData
+REFERENCE=$ANNODIR/Homo_sapiens/GRCh38_no_alt/genome.fa
+variantCatalog=$ANNODIR/STR/ExpansionHunterVariantCatalog/variant_catalog.json
+
+# tools dir
+TOOLDIR=/home2/niuyw/software
+
+eh_output=$WORKDIR/ExpansionHunter/$sample
+if [ ! -d $eh_output ]; then mkdir -p $eh_output; fi
+cd $eh_output
+ExpansionHunter --reads $bam \
+                --reference $REFERENCE \
+                --variant-catalog $variantCatalog \
+                --output-prefix $eh_output/$sample \
+                --sex $sex \
+                --threads $PPN
+
+str_analysis_output=$WORKDIR/str_analysis/$sample
+if [ ! -d $str_analysis_output ]; then mkdir -p $str_analysis_output; fi
+cd $str_analysis_output
+call_non_ref_pathogenic_motifs -r $REFERENCE --run-expansion-hunter --run-reviewer -g hg38 $bam --all-loci -o $str_analysis_output/$sample
+
+echo Finish time is `date +%Y/%m/%d--%H:%M`
+
+

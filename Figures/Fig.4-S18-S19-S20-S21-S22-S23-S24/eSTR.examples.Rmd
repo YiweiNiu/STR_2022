@@ -1,0 +1,230 @@
+---
+title: "eSTR.examples"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "eSTR.examples"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+- Plot some examples of eSTRs
+
+## Setup
+
+Load packages
+
+```{r libaries, cache = FALSE, message=FALSE, warning=FALSE}
+# Tidyverse
+library(tidyverse)
+
+# plot
+library(scales)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(ggcorrplot)
+library(ggbeeswarm)
+library(ggrepel)
+library(ggrastr)
+library(EnvStats)
+theme_set(theme_cowplot(
+  font_size = 10, # axis.title
+  rel_small = 10 / 10, # axis.text
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+))
+
+# heatmap
+library(pheatmap)
+library(corrplot)
+
+# color
+library(ggsci)
+library(RColorBrewer)
+```
+
+Load R source
+
+```{r source, cache = FALSE}
+source(here::here("code/color.R"))
+```
+
+## Load data
+
+Load exp
+
+```{r load-exp, cache=FALSE, warning=FALSE, message=FALSE}
+rna_exp = readRDS(here::here("output", "eSTR.preprocess_exp", "Geuvadis.exp_adjusted.rds"))
+rna_exp[1:3, 1:3]
+```
+
+Load STR geno
+
+```{r load-STR-geno, cache=FALSE, warning=FALSE, message=FALSE}
+str_geno = read_csv("/niuyw-usb-disk/Projects/STR/eSTR/Geuvadis_445.str_geno.csv") %>%
+  column_to_rownames("site")
+str_geno[1:3, 1:3]
+```
+
+Load eSTR result
+
+```{r load-eSTR-res, message=FALSE, warning=FALSE, cache=FALSE}
+df.eSTR = readRDS(here::here("output/eSTR.identification", "df.eSTR.rds"))
+```
+
+## Show top 100
+
+```{r show-top}
+DT::datatable(head(df.eSTR, 100), filter = "top")
+```
+
+## Plot
+
+```{r common-func}
+plot_str_geno_exp <- function(geno_dat=NULL, exp_dat=NULL,
+                              s=NULL, g=NULL, g_name = NULL) {
+  s_geno = na.omit(unlist(geno_dat[s, ]))
+  g_exp = exp_dat[, g]
+  names(g_exp) = rownames(exp_dat)
+  g_exp = g_exp[names(s_geno)]
+  dat = data.frame(sample = names(g_exp), exp = g_exp, geno = factor(s_geno))
+  p = dat %>%
+    ggplot(aes(x = geno, y = exp)) +
+    stat_boxplot(geom = "errorbar", width = 0.2) +
+    geom_boxplot(width = .5, outlier.colour = "black", outlier.size = .5) +
+    geom_jitter_rast(position=position_jitter(0.15), size = .2,
+                dev = "ragg", raster.dpi = 600) +
+    stat_summary(fun=mean, geom="line", aes(group=1), colour="red", size=1) + 
+    stat_summary(fun=mean, geom="point", colour="red", size=1.5, shape = 15) +
+    stat_n_text() +
+    labs(x = "STR dosage", y = "Normalized expression",
+         title = paste(g_name, s, sep = " - "))
+  return(p)
+}
+
+plot_str_geno_exp2 <- function(geno_dat=NULL, exp_dat=NULL,
+                              s=NULL, g=NULL, g_name = NULL) {
+  s_geno = na.omit(unlist(geno_dat[s, ]))
+  g_exp = exp_dat[, g]
+  names(g_exp) = rownames(exp_dat)
+  g_exp = g_exp[names(s_geno)]
+  dat = data.frame(sample = names(g_exp), exp = g_exp, geno = factor(s_geno))
+  p = dat %>%
+    ggplot(aes(x = geno, y = exp)) +
+    stat_boxplot(geom = "errorbar", width = 0.2) +
+    geom_boxplot(width = .6, outlier.colour = "black", outlier.size = .5) +
+    geom_beeswarm_rast(size = .2, width=0.15,
+                       dev = "ragg", raster.dpi = 600) +
+    stat_summary(fun=mean, geom="line", aes(group=1), colour="red", size=1) + 
+    stat_summary(fun=mean, geom="point", colour="red", size=1.5, shape = 15) +
+    stat_n_text() +
+    labs(x = "STR dosage", y = "Normalized expression",
+         title = paste(g_name, s, sep = " - "))
+  return(p)
+}
+```
+
+### Main
+
+#### chr7:100359506 - PILRB
+
+* CDS
+
+```{r fig.width=3, fig.height=3.5}
+s = "chr7:100359506"
+g = "ENSG00000121716.20"
+g_name = "PILRB"
+
+p.PILRB = plot_str_geno_exp(str_geno, rna_exp, s, g, g_name)
+p.PILRB
+```
+
+#### chr5:96936392 - ERAP2
+
+```{r fig.width=3, fig.height=3.5}
+s = "chr5:96936392"
+g = "ENSG00000164308.17"
+g_name = "ERAP2"
+
+p.ERAP2 = plot_str_geno_exp(str_geno, rna_exp, s, g, g_name)
+p.ERAP2
+```
+
+#### chr16:56472926 - BBS2
+
+```{r fig.width=3, fig.height=3.5}
+s = "chr16:56472926"
+g = "ENSG00000125124.12"
+g_name = "BBS2"
+
+p.ERAP2 = plot_str_geno_exp(str_geno, rna_exp, s, g, g_name)
+p.ERAP2
+```
+
+#### chr15:52512520 - MYO5A
+
+* intron
+
+```{r fig.width=3, fig.height=3.5}
+s = "chr15:52512520"
+g = "ENSG00000197535.14"
+g_name = "MYO5A"
+
+p.MYO5A = plot_str_geno_exp(str_geno, rna_exp, s, g, g_name)
+p.MYO5A
+```
+
+
+### Supp
+
+```{r fig.width=7.5, fig.height=8}
+supp_loci = list(
+  c("chr16:1826992", "ENSG00000180185.11", "FAHD1"), # UTR5
+  c("chr11:43772024", "ENSG00000149084.13", "HSD17B12"), # intron
+  c("chr6:26408245", "ENSG00000186470.14", "BTN3A2"), # intron
+  c("chr6:37694666", "ENSG00000112139.16", "MDGA1"), # intron
+  c("chr7:23630498", "ENSG00000169193.12", "CCDC126"), # intron
+  c("chr17:43131381", "ENSG00000198496.12", "NBR2"), # intron
+  c("chr8:143578340", "ENSG00000147813.16", "NAPRT"), # upstream
+  c("chr5:56882022", "ENSG00000155542.12", "SETD9"), 
+  c("chr6:109585127", "ENSG00000155085.15", "AK9") # upstream
+)
+
+p = lapply(supp_loci, function(x){
+  plot_str_geno_exp(str_geno, rna_exp, x[1], x[2], x[3])
+}) %>%
+  wrap_plots(ncol = 3)
+p
+ggsave(p, filename = here::here("output", DOCNAME, "Fig.eSTR_examples.pdf"),
+       height = 8, width = 7.5)
+saveRDS(p, file = here::here("output", DOCNAME, "Fig.eSTR_examples.rds"))
+```
+
+## Session info
+

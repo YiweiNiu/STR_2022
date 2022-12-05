@@ -1,0 +1,29 @@
+#!/bin/bash
+#PBS -V
+#PBS -j eo
+#PBS -N chr22.str_to_mat
+#PBS -q Fat
+#PBS -l nodes=1:ppn=1
+#PBS -d /home2/niuyw/project/STR/GWAS_risk/logs
+
+# WORK DIR
+WORKDIR=/home2/niuyw/project/STR/GWAS_risk
+cd $WORKDIR
+
+# chrom
+echo $chrom
+
+# PPN
+PPN=1
+
+# tools dir
+TOOLDIR=/home2/niuyw/software
+path2bcftools=$TOOLDIR/bcftools-1.14/bcftools
+export BCFTOOLS_PLUGINS=$TOOLDIR/bcftools-1.14/plugins
+
+echo Start time is `date +%Y/%m/%d--%H:%M`
+
+python str_to_mat.py -v ../02_FilteredRaw220120/${chrom}.vcf.gz -o STRs/$chrom
+
+echo Finish time is `date +%Y/%m/%d--%H:%M`
+
